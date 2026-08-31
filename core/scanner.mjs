@@ -1,9 +1,10 @@
 import { evaluateProfile, sha256 } from './trust-kernel.mjs'
 
-export const SCANNER_RULESET_VERSION = 'scanner-rules-2026.08.1'
+export const SCANNER_RULESET_VERSION = 'scanner-rules-2026.08.2'
 export const COLLECTOR_VERSION = 'repository-snapshot-v1'
 
 const DAY_MS = 24 * 60 * 60 * 1000
+const PLACEHOLDER_PATTERN = /\b(todo|tbd|fixme|placeholder|replace[ _-]?me|fill[ _-]?me)\b|<[^>]*(todo|tbd|fill|replace)[^>]*>|\[[^\]]*(todo|tbd|fill|replace)[^\]]*\]/i
 
 function normalizePath(value) {
   return String(value || '').replace(/^\.\//, '')
@@ -21,6 +22,24 @@ function hasAll(value, terms) {
 function hasAny(value, terms) {
   const haystack = text(value)
   return terms.some((term) => haystack.includes(term.toLowerCase()))
+}
+
+function isCompletedArtifact(value) {
+  const content = String(value || '')
+  return content.trim().length > 0 && !PLACEHOLDER_PATTERN.test(content)
+}
+
+function validFreshnessManifest(value) {
+  if (!isCompletedArtifact(value)) return false
+  try {
+    const parsed = JSON.parse(String(value))
+    const observed = Date.parse(parsed.observed_at)
+    const validUntil = Date.parse(parsed.valid_until)
+    const digest = String(parsed.sha256 || parsed.hash || '')
+    return Number.isFinite(observed) && Number.isFinite(validUntil) && validUntil > observed && /^[a-f0-9]{64}$/i.test(digest)
+  } catch {
+    return false
+  }
 }
 
 function fileEntries(snapshot) {
@@ -156,76 +175,82 @@ function isDedicated(path, names) {
 
 const PROMOTION_RULES = [
   {
-    id: 'repo.product-purpose.v1',
+    id: 'repo.product-purpose.v2',
     controlId: 'TR-GOV-001',
     strength: 'E1',
     match(snapshot) {
       return findFile(snapshot, (path, content) =>
         isDedicated(path, ['README.md', 'PRODUCT.md', 'SYSTEM_PURPOSE.md']) &&
+        isCompletedArtifact(content) &&
         content.length >= 120 &&
         hasAny(content, ['purpose', 'what it does', 'intended', 'for ', 'users', 'workflow']))
     },
-    note: 'Substantive product-purpose artifact observed in repository.',
+    note: 'Substantive completed product-purpose artifact observed in repository.',
   },
   {
-    id: 'repo.model-inventory.v1',
+    id: 'repo.model-inventory.v2',
     controlId: 'TR-AI-001',
     strength: 'E2',
     match(snapshot) {
       return findFile(snapshot, (path, content) =>
         isDedicated(path, ['MODEL_VENDOR_INVENTORY.md', 'MODEL_INVENTORY.md', 'AI_INVENTORY.json']) &&
+        isCompletedArtifact(content) &&
         hasAny(content, ['model', 'provider']) &&
         hasAny(content, ['version', 'purpose', 'data', 'vendor']))
     },
-    note: 'Dedicated model/provider inventory satisfies repository-level technical evidence rule.',
+    note: 'Completed dedicated model/provider inventory satisfies repository-level technical evidence rule.',
   },
   {
-    id: 'repo.limitations.v1',
+    id: 'repo.limitations.v2',
     controlId: 'TR-AI-004',
     strength: 'E1',
     match(snapshot) {
       return findFile(snapshot, (path, content) =>
         isDedicated(path, ['README.md', 'LIMITATIONS.md', 'ASSURANCE.md']) &&
+        isCompletedArtifact(content) &&
         hasAny(content, ['limitations', 'not proven', 'does not', 'non-goal', 'prohibited']))
     },
-    note: 'Explicit limitations/non-goal language observed.',
+    note: 'Completed limitations/non-goal language observed.',
   },
   {
-    id: 'repo.data-flow.v1',
+    id: 'repo.data-flow.v2',
     controlId: 'TR-DATA-001',
     strength: 'E2',
     match(snapshot) {
       return findFile(snapshot, (path, content) =>
         isDedicated(path, ['DATA_FLOW.md', 'DATAFLOW.md', 'ARCHITECTURE.md']) &&
+        isCompletedArtifact(content) &&
         hasAny(content, ['input', 'ingest']) &&
         hasAny(content, ['storage', 'database', 'persist']) &&
         hasAny(content, ['output', 'delete', 'retention', 'processor']))
     },
-    note: 'Dedicated end-to-end data-flow artifact observed.',
+    note: 'Completed dedicated end-to-end data-flow artifact observed.',
   },
   {
-    id: 'repo.subprocessors.v1',
+    id: 'repo.subprocessors.v2',
     controlId: 'TR-DATA-002',
     strength: 'E2',
     match(snapshot) {
       return findFile(snapshot, (path, content) =>
         isDedicated(path, ['SUBPROCESSORS.md', 'PROCESSORS.md', 'VENDORS.md']) &&
+        isCompletedArtifact(content) &&
         hasAny(content, ['processor', 'subprocessor', 'vendor']) &&
         hasAny(content, ['purpose', 'service', 'data']))
     },
-    note: 'Dedicated processor/subprocessor inventory observed.',
+    note: 'Completed dedicated processor/subprocessor inventory observed.',
   },
   {
-    id: 'repo.security-intake.v1',
+    id: 'repo.security-intake.v2',
     controlId: 'TR-SEC-002',
     strength: 'E2',
     match(snapshot) {
       return findFile(snapshot, (path, content) =>
         isDedicated(path, ['SECURITY.md']) &&
+        isCompletedArtifact(content) &&
         hasAny(content, ['report', 'contact', 'email', 'security@']) &&
         hasAny(content, ['vulnerability', 'security issue', 'security']))
     },
-    note: 'Dedicated security/vulnerability intake process observed.',
+    note: 'Completed dedicated security/vulnerability intake process observed.',
   },
   {
     id: 'repo.evaluation-evidence.v1',
@@ -253,28 +278,28 @@ const PROMOTION_RULES = [
     note: 'Dependency lock/inventory artifact provides repository-level supply-chain provenance.',
   },
   {
-    id: 'repo.buyer-assurance-pack.v1',
+    id: 'repo.buyer-assurance-pack.v2',
     controlId: 'TR-BUY-001',
     strength: 'E2',
     match(snapshot) {
       return findFile(snapshot, (path, content) =>
         isDedicated(path, ['TRUST_CENTER.md', 'ASSURANCE.md', 'BUYER_PACK.md']) &&
+        isCompletedArtifact(content) &&
         hasAny(content, ['evidence', 'proof', 'source']) &&
         hasAny(content, ['unknown', 'limitation', 'not proven', 'gap']))
     },
-    note: 'Buyer-facing assurance artifact cites evidence while preserving unknowns/limitations.',
+    note: 'Completed buyer-facing assurance artifact cites evidence while preserving unknowns/limitations.',
   },
   {
-    id: 'repo.evidence-freshness.v1',
+    id: 'repo.evidence-freshness.v2',
     controlId: 'TR-BUY-002',
     strength: 'E2',
     match(snapshot) {
       return findFile(snapshot, (path, content) =>
         isDedicated(path, ['ASSURANCE_MANIFEST.json', 'EVIDENCE_MANIFEST.json', 'TRUST_MANIFEST.json']) &&
-        hasAll(content, ['observed_at', 'valid_until']) &&
-        hasAny(content, ['sha256', 'hash']))
+        validFreshnessManifest(content))
     },
-    note: 'Machine-readable evidence manifest includes freshness/expiry metadata and hashes.',
+    note: 'Structurally valid machine-readable evidence manifest includes real timestamps and a SHA-256 digest.',
   },
 ]
 
@@ -369,8 +394,8 @@ function nextProof(control, result) {
   if (result.status === 'blocked') return 'Resolve the contradictory evidence, preserve both records, and re-run the deterministic rule.'
   if (control?.attestation_only) return 'Obtain an authenticated, named, authorised attestation for this organisational/legal conclusion.'
   if (control?.require_independent || control?.minimum_strength === 'E3') return 'Provide runtime/deployment observation or independent technical evidence tied to the exact environment.'
-  if (control?.minimum_strength === 'E2') return 'Provide code/config/CI or another dedicated machine-verifiable technical artifact that satisfies the promotion rule.'
-  return 'Provide a dedicated current policy/document artifact with explicit scope and owner.'
+  if (control?.minimum_strength === 'E2') return 'Provide completed code/config/CI or another dedicated machine-verifiable technical artifact that satisfies the promotion rule; placeholder templates never earn credit.'
+  return 'Provide a completed current policy/document artifact with explicit scope and owner; placeholder templates never earn credit.'
 }
 
 function remediationLane(control, result) {
@@ -406,6 +431,6 @@ export function scanRepositorySnapshot(snapshot, profile, { now = new Date(obser
     gaps: explainProfileGaps(profile, evaluation, evidence),
     provenance_complete: provenance.every((item) => item.valid),
     provenance_checks: provenance,
-    boundary: 'Repository scans can verify only controls whose configured evidence strength can be established from repository artifacts. Runtime, organisational, legal and independent-audit controls remain unresolved until stronger evidence is provided.',
+    boundary: 'Repository scans can verify only controls whose configured evidence strength can be established from completed repository artifacts. Placeholder templates, runtime, organisational, legal and independent-audit controls remain unresolved until stronger evidence is provided.',
   }
 }
