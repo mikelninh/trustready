@@ -27,6 +27,10 @@ export const SCANNER_GOLDEN_CASES = [
     'MODEL_VENDOR_INVENTORY.md': '# Model inventory\nProvider: ExampleAI\nModel: reasoning-v3\nVersion: 2026-08\nPurpose: classify support intent\nData: redacted support text\nVendor owner: Platform team',
   }, 'Dedicated technical inventory should satisfy E2.'),
 
+  golden('model-inventory-placeholder', 'TR-AI-001', 'candidate', {
+    'MODEL_VENDOR_INVENTORY.md': '# Model inventory\nProvider: TODO fill me\nModel: TODO\nVersion: TBD\nPurpose: placeholder\nData: TODO',
+  }, 'A generated-but-unfilled remediation template must never self-promote.'),
+
   golden('model-readme-mention', 'TR-AI-001', 'candidate', {
     'README.md': 'This LLM app can use OpenAI or another provider. Model choice may change.',
   }, 'Vendor/model mentions alone are discovery only.'),
@@ -43,6 +47,10 @@ export const SCANNER_GOLDEN_CASES = [
     'docs/DATA_FLOW.md': '# Data flow\nInput: uploaded PDF. Ingest extracts text. Storage: tenant-scoped Postgres. Processor: model provider receives minimised excerpts. Output: review memo. Retention: 30 days, then deletion.',
   }, 'Dedicated end-to-end data flow should satisfy E2.'),
 
+  golden('data-flow-placeholder', 'TR-DATA-001', 'candidate', {
+    'DATA_FLOW.md': '# Data flow\nInput: TODO\nStorage: TBD database\nProcessor: TODO\nOutput: TODO\nRetention: TODO',
+  }, 'An incomplete generated data-flow template must remain candidate.'),
+
   golden('architecture-vague', 'TR-DATA-001', 'candidate', {
     'README.md': 'Architecture uses an input, database storage and output layer.',
   }, 'Architecture keywords without dedicated data-flow proof remain candidate.'),
@@ -58,6 +66,10 @@ export const SCANNER_GOLDEN_CASES = [
   golden('security-intake-dedicated', 'TR-SEC-002', 'verified', {
     'SECURITY.md': '# Security\nReport a vulnerability or security issue to security@example.test. We acknowledge reports, triage severity and coordinate remediation before disclosure.',
   }, 'Dedicated vulnerability intake process should satisfy E2.'),
+
+  golden('security-template-placeholder', 'TR-SEC-002', 'candidate', {
+    'SECURITY.md': '# Security\nReport a vulnerability to TODO security contact. Contact: TODO. Security issue handling: TBD.',
+  }, 'A security-policy template with no real contact/process must not verify.'),
 
   golden('security-marketing-trap', 'TR-SEC-002', 'candidate', {
     'README.md': 'Security is our priority. Report dashboards are beautiful and fast.',
@@ -90,8 +102,12 @@ export const SCANNER_GOLDEN_CASES = [
   }, 'Trust-branded marketing without evidence/unknowns must not verify.'),
 
   golden('freshness-manifest', 'TR-BUY-002', 'verified', {
-    'ASSURANCE_MANIFEST.json': '{"observed_at":"2026-08-31T10:00:00Z","valid_until":"2026-09-30T10:00:00Z","sha256":"abc123"}',
+    'ASSURANCE_MANIFEST.json': '{"observed_at":"2026-08-31T10:00:00Z","valid_until":"2026-09-30T10:00:00Z","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}',
   }, 'Machine-readable observed/expiry/hash metadata should satisfy E2.'),
+
+  golden('freshness-placeholder', 'TR-BUY-002', 'candidate', {
+    'ASSURANCE_MANIFEST.json': '{"observed_at":"TODO","valid_until":"TBD","sha256":"placeholder"}',
+  }, 'A generated freshness manifest with placeholders must not earn credit.'),
 
   golden('freshness-incomplete', 'TR-BUY-002', 'candidate', {
     'ASSURANCE_MANIFEST.json': '{"observed_at":"2026-08-31T10:00:00Z","status":"fresh"}',
