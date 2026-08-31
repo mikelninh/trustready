@@ -13,7 +13,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Run fail-closed trust-kernel tests
+      - name: Run fail-closed trust-kernel and scanner tests
         run: npm test
+      - name: Run labelled scanner safety benchmark
+        run: npm run benchmark:scanner
+      - name: Validate collector and dogfood entrypoints
+        run: |
+          node --check collectors/github-public.mjs
+          node --check collectors/url-public.mjs
+          node --check scripts/dogfood.mjs
       - name: Validate versioned procurement profile
         run: node -e "const p=require('./profiles/core-ai-procurement-2026.08.json'); if(!p.id||!p.version||p.controls.length<20) process.exit(1); console.log(p.id,p.version,p.controls.length)"
