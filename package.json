@@ -1,0 +1,13 @@
+{
+  "name": "trustready",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test core/*.test.mjs",
+    "verify:example": "node scripts/verify-manifest.mjs examples/assurance-manifest.json"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
