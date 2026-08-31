@@ -1,0 +1,28 @@
+{
+  "id": "core-ai-procurement",
+  "version": "2026.08",
+  "title": "Core AI Procurement Readiness",
+  "description": "Framework-neutral baseline used before external mappings. It does not certify legal compliance.",
+  "controls": [
+    {"id":"TR-GOV-001","title":"System purpose and intended users are defined","minimum_strength":"E1","blocking":true},
+    {"id":"TR-GOV-002","title":"AI provider/deployer role and risk classification is reviewed","minimum_strength":"E4","attestation_only":true,"blocking":true},
+    {"id":"TR-GOV-003","title":"Named accountable control owners exist","minimum_strength":"E4","attestation_only":true,"blocking":true},
+    {"id":"TR-AI-001","title":"Model/provider inventory is current","minimum_strength":"E2","blocking":true},
+    {"id":"TR-AI-002","title":"Human authority boundary is explicit and implemented","minimum_strength":"E3","require_independent":true,"blocking":true},
+    {"id":"TR-AI-003","title":"User-facing AI transparency/disclosure is implemented where applicable","minimum_strength":"E3","require_independent":true,"blocking":true},
+    {"id":"TR-AI-004","title":"Known limitations and prohibited/non-goal uses are documented","minimum_strength":"E1","blocking":false},
+    {"id":"TR-DATA-001","title":"End-to-end data flow is documented","minimum_strength":"E2","blocking":true},
+    {"id":"TR-DATA-002","title":"Processors/subprocessors are inventoried","minimum_strength":"E2","blocking":true},
+    {"id":"TR-DATA-003","title":"Retention and deletion behavior is defined and technically evidenced","minimum_strength":"E3","require_independent":true,"blocking":true},
+    {"id":"TR-SEC-001","title":"Authentication, authorization and tenant boundaries are technically evidenced","minimum_strength":"E3","require_independent":true,"blocking":true},
+    {"id":"TR-SEC-002","title":"Security contact and vulnerability intake process exist","minimum_strength":"E2","blocking":true},
+    {"id":"TR-SEC-003","title":"Security/AI incident response is defined and exercised","minimum_strength":"E3","require_independent":true,"blocking":true},
+    {"id":"TR-OPS-001","title":"Audit trace exists for consequential AI/tool actions","minimum_strength":"E3","require_independent":true,"blocking":true},
+    {"id":"TR-OPS-002","title":"Evaluations cover important failure modes and limitations","minimum_strength":"E2","blocking":true},
+    {"id":"TR-OPS-003","title":"Production monitoring and regression detection exist","minimum_strength":"E3","require_independent":true,"blocking":true},
+    {"id":"TR-OPS-004","title":"Backup/restore and rollback capability is evidenced where state is durable","minimum_strength":"E3","require_independent":true,"blocking":false},
+    {"id":"TR-SUPPLY-001","title":"Software/model supply chain inventory and change provenance exist","minimum_strength":"E2","blocking":false},
+    {"id":"TR-BUY-001","title":"Buyer-facing assurance pack cites evidence and unknowns","minimum_strength":"E2","blocking":true},
+    {"id":"TR-BUY-002","title":"Evidence has freshness/expiry metadata","minimum_strength":"E2","blocking":true}
+  ]
+}
