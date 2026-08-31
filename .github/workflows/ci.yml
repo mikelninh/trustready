@@ -1,0 +1,19 @@
+name: trustready-ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  trust-kernel:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run fail-closed trust-kernel tests
+        run: npm test
+      - name: Validate versioned procurement profile
+        run: node -e "const p=require('./profiles/core-ai-procurement-2026.08.json'); if(!p.id||!p.version||p.controls.length<20) process.exit(1); console.log(p.id,p.version,p.controls.length)"
