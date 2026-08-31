@@ -35,9 +35,9 @@ export const SCANNER_GOLDEN_CASES = [
     'ASSURANCE.md': '# Assurance\nLimitations: synthetic evaluations are not production accuracy claims. The system does not make final medical, legal, employment, credit or public-benefit decisions. Non-goal: autonomous consequential action.',
   }, 'Explicit limitations artifact should satisfy E1.'),
 
-  golden('limitations-changelog-trap', 'TR-AI-004', 'candidate', {
+  golden('limitations-changelog-trap', 'TR-AI-004', 'not_observed', {
     'CHANGELOG.md': 'Fix limitation in test runner. This does not change API output.',
-  }, 'Incidental limitation language must not satisfy the control.'),
+  }, 'Incidental language outside discovery/promotion rules must remain not observed.'),
 
   golden('data-flow-dedicated', 'TR-DATA-001', 'verified', {
     'docs/DATA_FLOW.md': '# Data flow\nInput: uploaded PDF. Ingest extracts text. Storage: tenant-scoped Postgres. Processor: model provider receives minimised excerpts. Output: review memo. Retention: 30 days, then deletion.',
