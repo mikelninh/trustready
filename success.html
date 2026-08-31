@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>TrustReady — Subscription active</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="topbar"><div class="brand"><span class="brand-mark">T</span><span>TrustReady</span></div><div class="top-meta">Paid access</div></header>
+  <main class="hero">
+    <div class="eyebrow">SUBSCRIPTION</div>
+    <h1 id="title">Activating your access…</h1>
+    <p class="hero-copy" id="copy">TrustReady is checking the Stripe subscription before issuing your API token.</p>
+    <section class="panel hidden" id="access">
+      <h3>Your TrustReady API token</h3>
+      <p class="small-muted">Treat this like a password. It expires and can be re-issued from a paid Checkout session while the subscription remains active.</p>
+      <pre id="token" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre>
+      <div class="scan-row">
+        <button id="copy-token">Copy token</button>
+        <a href="/" class="secondary-button">Back to scanner</a>
+      </div>
+      <h3 style="margin-top:28px">First paid API call</h3>
+      <pre id="example" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre>
+    </section>
+    <section class="error-card hidden" id="error"></section>
+  </main>
+<script type="module">
+const params = new URLSearchParams(location.search)
+const session = params.get('session_id')
+const access = document.querySelector('#access')
+const error = document.querySelector('#error')
+try {
+  if (!session) throw new Error('No Checkout session found. If you already subscribed, return through your Checkout success link to issue a fresh token.')
+  const response = await fetch(`/api/billing/activate?session_id=${encodeURIComponent(session)}`)
+  const data = await response.json()
+  if (!response.ok) throw new Error(data.error || 'Activation failed')
+  document.querySelector('#title').textContent = `${data.plan[0].toUpperCase()+data.plan.slice(1)} is active`
+  document.querySelector('#copy').textContent = `${data.api_units} API units/month included. Access is re-checked against the Stripe subscription on paid requests.`
+  document.querySelector('#token').textContent = data.token
+  document.querySelector('#example').textContent = `curl -H "Authorization: Bearer ${data.token}" "${location.origin}/api/v1/scan?repo=https://github.com/mikelninh/gitlaw"`
+  access.classList.remove('hidden')
+  document.querySelector('#copy-token').onclick = async () => { await navigator.clipboard.writeText(data.token); document.querySelector('#copy-token').textContent='Copied' }
+} catch (e) {
+  document.querySelector('#title').textContent = 'Activation needs attention'
+  document.querySelector('#copy').textContent = 'No paid entitlement was issued.'
+  error.textContent = e.message
+  error.classList.remove('hidden')
+}
+</script>
+</body>
+</html>
