@@ -4,7 +4,7 @@
 
 1. Visitor runs the free public browser scan.
 2. Pricing offers Developer (€49/month) and Team (€249/month).
-3. `POST /api/billing/checkout` creates a Stripe-hosted subscription Checkout Session using configured live Price IDs.
+3. `POST /api/billing/checkout` creates a Stripe-hosted subscription Checkout Session. Stable Stripe Price IDs are used when configured; otherwise recurring inline `price_data` creates the €49/€249 subscription directly.
 4. Stripe redirects successful customers to `/success.html?session_id=...`.
 5. `GET /api/billing/activate` retrieves the Checkout Session from Stripe, requires an active/trialing subscription, and issues a short-lived HMAC-signed TrustReady API token.
 6. Paid REST (`/api/v1/scan`) and remote MCP (`/api/mcp`) verify the token and re-check the Stripe subscription before doing work.
@@ -18,7 +18,7 @@
 - Tokens are signed server-side with `TRUSTREADY_TOKEN_SECRET` and expire after 24h.
 - Paid requests re-check Stripe subscription state.
 - Payment never changes evidence rules or verification thresholds.
-- Price IDs and Stripe secrets are deployment environment variables, never committed.
+- Stripe secrets are deployment environment variables, never committed.
 
 ## Plans
 
@@ -42,14 +42,18 @@ See `.env.example`.
 
 Charge-ready requires:
 - `STRIPE_SECRET_KEY`
-- `STRIPE_PRICE_DEVELOPER`
-- `STRIPE_PRICE_TEAM`
 - `TRUSTREADY_TOKEN_SECRET`
 - `TRUSTREADY_APP_ORIGIN`
 
+Optional but preferred later:
+- `STRIPE_PRICE_DEVELOPER`
+- `STRIPE_PRICE_TEAM`
+
+Without stable Price IDs, Checkout uses recurring inline prices at the plan amounts encoded in the server-side plan registry.
+
 ## External blockers discovered on 2026-08-31
 
-The connected live Stripe account available to this build session did not grant Product creation permissions, so live Price IDs could not be created programmatically. The code therefore consumes pre-created Price IDs via environment variables. Once the Stripe permissions/prices exist, no code redesign is required.
+The connected live Stripe account available to this build session does not grant Checkout/Product mutation permissions, so the live charge path cannot be executed from this connector session. The application code no longer requires pre-created Product/Price objects, but the production deployment still needs a Stripe secret key with permission to create Checkout Sessions.
 
 The connected Vercel team currently exposes no projects through the connector, so a public production origin is not yet established from this session. Deployment configuration is ready, but the repository must be imported/created in Vercel (or deployed on another Node-compatible host) and the environment variables set before real Checkout can run.
 
@@ -57,7 +61,7 @@ The connected Vercel team currently exposes no projects through the connector, s
 
 We call the product charge-ready only when all are true:
 - production site is reachable;
-- live Stripe price IDs are configured;
+- live Stripe secret is configured with Checkout permission;
 - checkout opens in live mode;
 - a real/test subscription can activate;
 - token issuance succeeds only for active/trialing subscriptions;
