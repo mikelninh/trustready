@@ -1,6 +1,6 @@
 {
   "name": "trustready",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,6 +8,10 @@
     "benchmark:scanner": "node benchmarks/run-scanner-benchmark.mjs",
     "verify:example": "node scripts/verify-manifest.mjs examples/assurance-manifest.json",
     "dogfood": "node scripts/dogfood.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "2.0.0",
+    "zod": "4.5.4"
   },
   "engines": {
     "node": ">=22"
