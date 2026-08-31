@@ -15,6 +15,13 @@ const TARGETS = [
   { id: 'trustready', name: 'TrustReady', repo: 'https://github.com/mikelninh/trustready' },
 ]
 
+function githubFetch(url, options = {}) {
+  const token = process.env.GITHUB_TOKEN
+  const headers = { ...(options.headers || {}) }
+  if (token) headers.authorization = `Bearer ${token}`
+  return fetch(url, { ...options, headers })
+}
+
 function deriveHausPilot(factorySnapshot) {
   const files = Object.fromEntries(Object.entries(factorySnapshot.files).filter(([file]) => file.toLowerCase().includes('hauspilot')))
   return {
@@ -65,7 +72,7 @@ const scans = []
 let factorySnapshot = null
 
 for (const target of TARGETS) {
-  const snapshot = await collectPublicGitHubSnapshot(target.repo)
+  const snapshot = await collectPublicGitHubSnapshot(target.repo, { fetchImpl: githubFetch })
   snapshot.subject.id = target.id
   snapshot.subject.name = target.name
   if (target.id === 'digital-worker-factory') factorySnapshot = snapshot
