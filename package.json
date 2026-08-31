@@ -1,11 +1,13 @@
 {
   "name": "trustready",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "scripts": {
     "test": "node --test core/*.test.mjs",
-    "verify:example": "node scripts/verify-manifest.mjs examples/assurance-manifest.json"
+    "benchmark:scanner": "node benchmarks/run-scanner-benchmark.mjs",
+    "verify:example": "node scripts/verify-manifest.mjs examples/assurance-manifest.json",
+    "dogfood": "node scripts/dogfood.mjs"
   },
   "engines": {
     "node": ">=22"
