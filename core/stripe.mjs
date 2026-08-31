@@ -35,12 +35,28 @@ export async function stripeRequest(path, { method = 'GET', body, env = process.
   return data
 }
 
-export async function createCheckoutSession({ price_id, plan, origin, customer_email }, env = process.env) {
+export async function createCheckoutSession({ price_id, plan, amount_eur, origin, customer_email }, env = process.env) {
+  const lineItem = price_id
+    ? { price: price_id, quantity: 1 }
+    : {
+        quantity: 1,
+        price_data: {
+          currency: 'eur',
+          unit_amount: Math.round(Number(amount_eur) * 100),
+          recurring: { interval: 'month' },
+          product_data: {
+            name: `TrustReady ${plan[0].toUpperCase()}${plan.slice(1)}`,
+            description: 'Evidence-backed AI procurement readiness machine access',
+            metadata: { trustready_plan: plan },
+          },
+        },
+      }
+
   return stripeRequest('/checkout/sessions', {
     method: 'POST', env,
     body: {
       mode: 'subscription',
-      line_items: [{ price: price_id, quantity: 1 }],
+      line_items: [lineItem],
       success_url: `${origin}/success.html?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${origin}/#pricing`,
       customer_email: customer_email || undefined,
