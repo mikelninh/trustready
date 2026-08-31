@@ -17,10 +17,14 @@ export default async function handler(req, res) {
   }
   const { plan, email } = req.body || {}
   if (!PLANS[plan]) return res.status(400).json({ error: 'plan must be developer or team' })
-  const price = configuredPrice(plan)
-  if (!price) return res.status(503).json({ error: `Billing is not configured for ${plan}. Missing ${PLANS[plan].env_price}.` })
   try {
-    const session = await createCheckoutSession({ price_id: price, plan, origin: originFor(req), customer_email: email })
+    const session = await createCheckoutSession({
+      price_id: configuredPrice(plan),
+      plan,
+      amount_eur: PLANS[plan].monthly_eur,
+      origin: originFor(req),
+      customer_email: email,
+    })
     return res.status(200).json({ checkout_url: session.url, session_id: session.id })
   } catch (error) {
     return res.status(400).json({ error: error.message || 'Checkout creation failed' })
