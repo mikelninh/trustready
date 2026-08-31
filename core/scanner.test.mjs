@@ -24,7 +24,7 @@ function snapshot(files) {
 }
 
 test('keyword-only evidence is candidate and cannot earn verified credit', () => {
-  const input = snapshot({ 'README.md': 'Security audit trace human approval model provider retention deletion monitoring.' })
+  const input = snapshot({ 'README.md': 'Security audit trace human approval model provider retention deletion monitoring. Authentication, authorization and tenant RBAC are described here.' })
   const candidates = discoverCandidateEvidence(input, profile)
   assert.ok(candidates.length > 0)
   assert.ok(candidates.every((item) => item.strength === 'E0' && item.candidate === true))
