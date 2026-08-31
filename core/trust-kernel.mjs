@@ -114,11 +114,6 @@ export function evaluateControl({ control, evidence = [], now = new Date() }) {
     }
   }
 
-  const requiredStrength = EVIDENCE_STRENGTH[control.minimum_strength || 'E1']
-  const strongest = maxStrength(nonCandidate)
-  const requiresIndependent = Boolean(control.require_independent)
-  const independentSatisfied = !requiresIndependent || independentlyObserved(nonCandidate)
-
   if (control.attestation_only) {
     const attestation = nonCandidate.find((item) => item.strength === 'E4' && item.authorised_attestation === true)
     if (attestation) {
@@ -130,7 +125,19 @@ export function evaluateControl({ control, evidence = [], now = new Date() }) {
         blocking: false,
       }
     }
+    return {
+      control_id: control.id,
+      status: 'partial',
+      evidence_ids: nonCandidate.map((item) => item.evidence_id),
+      reason: 'This control requires an explicit authorised E4 attestation; evidence strength alone cannot satisfy it.',
+      blocking: Boolean(control.blocking),
+    }
   }
+
+  const requiredStrength = EVIDENCE_STRENGTH[control.minimum_strength || 'E1']
+  const strongest = maxStrength(nonCandidate)
+  const requiresIndependent = Boolean(control.require_independent)
+  const independentSatisfied = !requiresIndependent || independentlyObserved(nonCandidate)
 
   if (strongest >= requiredStrength && independentSatisfied) {
     return {
@@ -163,7 +170,7 @@ export function evaluateProfile({ profile, evidence, now = new Date() }) {
   const relevantEvidenceIds = new Set(results.flatMap((result) => result.evidence_ids))
   const usedEvidence = evidence.filter((item) => relevantEvidenceIds.has(item.evidence_id))
   const independentIds = new Set(usedEvidence.filter((item) => item.independent === true || EVIDENCE_STRENGTH[item.strength] >= EVIDENCE_STRENGTH.E3).map((item) => item.evidence_id))
-  const attestationIds = new Set(usedEvidence.filter((item) => item.strength === 'E4').map((item) => item.evidence_id))
+  const attestationIds = new Set(usedEvidence.filter((item) => item.strength === 'E4' && item.authorised_attestation === true).map((item) => item.evidence_id))
   const freshIds = new Set(usedEvidence.filter((item) => !isExpired(item, now)).map((item) => item.evidence_id))
 
   const pct = (num, den) => den === 0 ? 0 : Math.round((num / den) * 10000) / 100
