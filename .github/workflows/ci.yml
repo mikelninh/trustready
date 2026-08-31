@@ -13,18 +13,26 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Run fail-closed trust-kernel and scanner tests
+      - name: Run fail-closed trust-kernel, scanner and billing tests
         run: npm test
       - name: Run labelled scanner safety benchmark
         run: npm run benchmark:scanner
-      - name: Validate collector, API, MCP, WebMCP, UI and dogfood entrypoints
+      - name: Validate collector, billing, API, MCP, WebMCP, UI and dogfood entrypoints
         run: |
           node --check collectors/github-public.mjs
           node --check collectors/url-public.mjs
           node --check browser-scan.mjs
+          node --check core/billing.mjs
+          node --check core/stripe.mjs
           node --check api/scan.mjs
+          node --check api/v1/scan.mjs
+          node --check api/billing/checkout.mjs
+          node --check api/billing/activate.mjs
+          node --check api/billing/portal.mjs
+          node --check api/mcp.mjs
           node --check mcp/server.mjs
           node --check webmcp.js
+          node --check billing.js
           node --check app.js
           node --check scripts/dogfood.mjs
       - name: Validate versioned procurement profile
