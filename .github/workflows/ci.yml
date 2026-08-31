@@ -17,11 +17,14 @@ jobs:
         run: npm test
       - name: Run labelled scanner safety benchmark
         run: npm run benchmark:scanner
-      - name: Validate collector, API, UI and dogfood entrypoints
+      - name: Validate collector, API, MCP, WebMCP, UI and dogfood entrypoints
         run: |
           node --check collectors/github-public.mjs
           node --check collectors/url-public.mjs
+          node --check browser-scan.mjs
           node --check api/scan.mjs
+          node --check mcp/server.mjs
+          node --check webmcp.js
           node --check app.js
           node --check scripts/dogfood.mjs
       - name: Validate versioned procurement profile
