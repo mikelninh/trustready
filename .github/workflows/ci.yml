@@ -27,5 +27,16 @@ jobs:
           node --check webmcp.js
           node --check app.js
           node --check scripts/dogfood.mjs
+      - name: Verify hosted runtime uses exact tested core modules
+        run: |
+          cmp core/trust-kernel.mjs supabase/functions/trustready/lib/trust-kernel.mjs
+          cmp core/scanner.mjs supabase/functions/trustready/lib/scanner.mjs
+          cmp core/commercial.mjs supabase/functions/trustready/lib/commercial.mjs
+          tail -n +2 collectors/github-public.mjs > /tmp/github-core.mjs
+          tail -n +2 supabase/functions/trustready/lib/github-public.mjs > /tmp/github-edge.mjs
+          cmp /tmp/github-core.mjs /tmp/github-edge.mjs
+          node -e "Promise.all([import('./supabase/functions/trustready/lib/profile.mjs'), import('./profiles/core-ai-procurement-2026.08.json',{with:{type:'json'}})]).then(([m,j])=>{const a=m.profile,b=j.default;if(a.id!==b.id||a.version!==b.version||JSON.stringify(a.controls)!==JSON.stringify(b.controls))process.exit(1);console.log(a.id,a.version,a.controls.length)})"
+      - name: Parse hosted Edge Function TypeScript
+        run: npx --yes typescript@5.8.3 --noEmit --noCheck --target ES2022 --module ESNext --allowImportingTsExtensions supabase/functions/trustready/index.ts
       - name: Validate versioned procurement profile
         run: node -e "const p=require('./profiles/core-ai-procurement-2026.08.json'); if(!p.id||!p.version||p.controls.length<20) process.exit(1); console.log(p.id,p.version,p.controls.length)"

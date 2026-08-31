@@ -47,6 +47,19 @@ test('dedicated E2 artifact is promoted with immutable provenance', () => {
   assert.match(item.source, /blob\/abc123def456\/MODEL_VENDOR_INVENTORY\.md$/)
 })
 
+test('generated placeholder artifacts cannot self-promote', () => {
+  const input = snapshot({
+    'MODEL_VENDOR_INVENTORY.md': '# Model inventory\nProvider: TODO\nModel: TODO\nVersion: TBD\nPurpose: fill me\nData: placeholder',
+    'DATA_FLOW.md': '# Data flow\nInput: TODO\nStorage: TBD database\nOutput: TODO\nRetention: TODO',
+    'ASSURANCE_MANIFEST.json': '{"observed_at":"TODO","valid_until":"TBD","sha256":"placeholder"}',
+  })
+  const scan = scanRepositorySnapshot(input, profile)
+  for (const controlId of ['TR-AI-001', 'TR-DATA-001', 'TR-BUY-002']) {
+    const result = scan.evaluation.results.find((item) => item.control_id === controlId)
+    assert.notEqual(result.status, 'verified', `${controlId} must remain unresolved while placeholders exist`)
+  }
+})
+
 test('repository scanner refuses to verify E3 runtime controls from static source', () => {
   const input = snapshot({
     'README.md': 'Human approval is mandatory. Authentication and tenant isolation are enforced. Audit trace and replay are available. Production monitoring and rollback are enabled.',
@@ -71,9 +84,9 @@ test('gap explanation tells a reviewer exactly what proof is still needed', () =
   assert.equal(role.rule_profile, 'core-ai-procurement@2026.08')
 })
 
-test('30-case benchmark has zero false verified and full exact-status agreement', () => {
+test('scanner safety benchmark has zero false verified and full exact-status agreement', () => {
   const report = runScannerBenchmark(SCANNER_GOLDEN_CASES, profile)
-  assert.ok(report.cases >= 20)
+  assert.ok(report.cases >= 34)
   assert.equal(report.metrics.false_verified_rate, 0)
   assert.equal(report.metrics.false_positives, 0)
   assert.equal(report.metrics.false_negatives, 0)
