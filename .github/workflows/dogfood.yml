@@ -1,0 +1,38 @@
+name: trustready-dogfood
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  public-dogfood:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Scan our public products with the real collector
+        id: dogfood
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p dogfood-output
+          npm run dogfood -- dogfood-output | tee dogfood-output/console.json
+      - name: Record live-scan availability without gating release
+        if: always()
+        run: |
+          echo "dogfood_outcome=${{ steps.dogfood.outcome }}"
+          test -d dogfood-output || mkdir -p dogfood-output
+          printf '%s\n' '${{ steps.dogfood.outcome }}' > dogfood-output/workflow-outcome.txt
+      - name: Upload raw dogfood evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trustready-dogfood-${{ github.run_id }}
+          path: dogfood-output
+          if-no-files-found: warn
