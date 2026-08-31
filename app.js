@@ -1,3 +1,5 @@
+import { scanPublicGitHubInBrowser } from './browser-scan.mjs'
+
 const $ = (sel) => document.querySelector(sel)
 const $$ = (sel) => [...document.querySelectorAll(sel)]
 
@@ -138,10 +140,7 @@ async function runScan(repo) {
   setBusy(true)
   errorCard.classList.add('hidden')
   try {
-    const response = await fetch(`/api/scan?repo=${encodeURIComponent(repo)}`)
-    const data = await response.json()
-    if (!response.ok) throw new Error(data.error || `Scan failed (${response.status})`)
-    render(data)
+    render(await scanPublicGitHubInBrowser(repo))
   } catch (error) {
     showError(error.message || 'Scan failed')
   } finally {
