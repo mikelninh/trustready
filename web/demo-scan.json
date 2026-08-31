@@ -1,0 +1,44 @@
+{
+  "schema": "trustready-ui-demo-v1",
+  "subject": {
+    "name": "GitLaw",
+    "source": "https://github.com/mikelninh/gitlaw",
+    "source_revision": "1c38157e810de27944825bf222cb42c7af1cb65d"
+  },
+  "profile": {
+    "id": "core-ai-procurement",
+    "version": "2026.08",
+    "title": "Core AI Procurement Readiness"
+  },
+  "score": 20,
+  "target": 100,
+  "counts": {
+    "verified": 4,
+    "candidate": 14,
+    "not_observed": 2,
+    "attestation_required": 2
+  },
+  "truth_boundary": "Public-repository evidence only. This is not a certification, legal opinion, security guarantee or government approval.",
+  "controls": [
+    {"id":"TR-GOV-001","title":"System purpose and intended users are defined","status":"verified","points":5,"lane":"E1/E2","blocking":true,"why":"Dedicated purpose evidence satisfied the deterministic source-evidence rule.","evidence":"Repository evidence pinned to immutable commit revision.","next":"No remediation required; keep evidence fresh."},
+    {"id":"TR-GOV-002","title":"AI provider/deployer role and risk classification is reviewed","status":"attestation_required","points":0,"lane":"E4","blocking":true,"why":"Repository documents cannot authorise an organisational/legal conclusion.","evidence":"Candidate role/risk language observed in repository.","next":"Named accountable reviewer signs an authenticated role/risk attestation."},
+    {"id":"TR-GOV-003","title":"Named accountable control owners exist","status":"attestation_required","points":0,"lane":"E4","blocking":true,"why":"An unauthenticated Markdown owner list cannot satisfy an E4 control.","evidence":"Candidate ownership language observed.","next":"Capture authenticated attestations for named control owners."},
+    {"id":"TR-AI-001","title":"Model/provider inventory is current","status":"candidate","points":0,"lane":"E1/E2","blocking":true,"why":"Model/provider references exist but no dedicated current inventory satisfies the promotion rule.","evidence":"Provider/model mentions detected across repository files.","next":"Create a machine-readable model/provider inventory with purpose, version, environment, owner and review date; re-scan."},
+    {"id":"TR-AI-002","title":"Human authority boundary is explicit and implemented","status":"candidate","points":0,"lane":"E3","blocking":true,"why":"Static source can describe approval gates but cannot prove deployed enforcement.","evidence":"Human approval / authority language observed in source.","next":"Run an environment-bound approval-bypass test and preserve result, timestamp, environment and evidence hash."},
+    {"id":"TR-AI-003","title":"User-facing AI transparency/disclosure is implemented where applicable","status":"not_observed","points":0,"lane":"E3","blocking":true,"why":"The relevant deployed user journey was not observed by the repository scan.","evidence":"No accepted runtime observation supplied.","next":"Observe the deployed journey and capture explicit AI disclosure evidence."},
+    {"id":"TR-AI-004","title":"Known limitations and prohibited/non-goal uses are documented","status":"verified","points":5,"lane":"E1/E2","blocking":false,"why":"Dedicated limitations evidence satisfied the deterministic rule.","evidence":"Current repository limitation/non-goal artifact.","next":"Keep it current and tie changes to release review."},
+    {"id":"TR-DATA-001","title":"End-to-end data flow is documented","status":"candidate","points":0,"lane":"E1/E2","blocking":true,"why":"Architecture references exist, but not a dedicated end-to-end data-flow artifact.","evidence":"Candidate data-flow/architecture evidence observed.","next":"Create DATA_FLOW.md or structured equivalent covering inputs, storage, model/provider calls, outputs, logging, retention and deletion."},
+    {"id":"TR-DATA-002","title":"Processors/subprocessors are inventoried","status":"candidate","points":0,"lane":"E1/E2","blocking":true,"why":"Vendor mentions are not a current processor inventory.","evidence":"Candidate vendor/provider evidence observed.","next":"Create a current processor/subprocessor inventory with purpose, data categories, region, DPA/status and review date."},
+    {"id":"TR-DATA-003","title":"Retention and deletion behavior is defined and technically evidenced","status":"candidate","points":0,"lane":"E3","blocking":true,"why":"Policy/source statements cannot prove deployed deletion behavior.","evidence":"Candidate retention/deletion language observed.","next":"Run an environment-bound retention/deletion verification and preserve proof."},
+    {"id":"TR-SEC-001","title":"Authentication, authorization and tenant boundaries are technically evidenced","status":"candidate","points":0,"lane":"E3","blocking":true,"why":"Source code is not independent proof of deployed tenant isolation.","evidence":"Auth/access-control implementation signals observed.","next":"Run a cross-tenant/authz probe in the exact deployed environment."},
+    {"id":"TR-SEC-002","title":"Security contact and vulnerability intake process exist","status":"candidate","points":0,"lane":"E1/E2","blocking":true,"why":"Security language exists but no dedicated intake artifact satisfied the rule.","evidence":"Candidate security contact/process evidence observed.","next":"Add SECURITY.md with a concrete vulnerability reporting/intake process and re-scan."},
+    {"id":"TR-SEC-003","title":"Security/AI incident response is defined and exercised","status":"candidate","points":0,"lane":"E3","blocking":true,"why":"A plan cannot prove the process was exercised.","evidence":"Candidate incident-response documentation observed.","next":"Run and record a tabletop or technical incident exercise with dated outcomes and owners."},
+    {"id":"TR-OPS-001","title":"Audit trace exists for consequential AI/tool actions","status":"candidate","points":0,"lane":"E3","blocking":true,"why":"Static implementation cannot prove production audit events exist and are replayable.","evidence":"Audit/logging implementation signals observed.","next":"Capture a real consequential action, its approval event, immutable audit record and replay/trace proof."},
+    {"id":"TR-OPS-002","title":"Evaluations cover important failure modes and limitations","status":"verified","points":5,"lane":"E1/E2","blocking":true,"why":"Concrete tests/evals and CI satisfy the technical evidence rule.","evidence":"Repository test/eval artifacts tied to immutable revision.","next":"Expand benchmark with every real failure and keep CI gating."},
+    {"id":"TR-OPS-003","title":"Production monitoring and regression detection exist","status":"candidate","points":0,"lane":"E3","blocking":true,"why":"Repository config cannot prove monitoring is active in production.","evidence":"Candidate monitoring/config signals observed.","next":"Capture an environment-bound monitoring observation and a synthetic regression/alert proof."},
+    {"id":"TR-OPS-004","title":"Backup/restore and rollback capability is evidenced where state is durable","status":"candidate","points":0,"lane":"E3","blocking":false,"why":"A runbook cannot prove restore/rollback was exercised.","evidence":"Candidate backup/rollback documentation observed.","next":"Run a restore or rollback drill and preserve the evidence."},
+    {"id":"TR-SUPPLY-001","title":"Software/model supply chain inventory and change provenance exist","status":"verified","points":5,"lane":"E1/E2","blocking":false,"why":"Accepted dependency/change provenance evidence exists.","evidence":"Repository dependency/change provenance tied to immutable revision.","next":"Keep provenance current and add model-provider change tracking."},
+    {"id":"TR-BUY-001","title":"Buyer-facing assurance pack cites evidence and unknowns","status":"candidate","points":0,"lane":"E1/E2","blocking":true,"why":"Trust-oriented documentation exists but does not yet satisfy buyer-pack evidence/unknown requirements.","evidence":"Candidate assurance/trust documentation observed.","next":"Generate a buyer pack that cites each accepted evidence item and explicitly lists unknowns/unresolved controls."},
+    {"id":"TR-BUY-002","title":"Evidence has freshness/expiry metadata","status":"candidate","points":0,"lane":"E1/E2","blocking":true,"why":"Evidence exists without a complete machine-readable freshness/expiry contract.","evidence":"Provenance exists but buyer-facing freshness manifest is incomplete.","next":"Create an evidence manifest with observed_at, valid_until, hashes, source revision and rule version."}
+  ]
+}
