@@ -1,0 +1,120 @@
+openapi: 3.1.1
+info:
+  title: TrustReady API
+  version: 0.3.0
+  description: |
+    Evidence-backed AI procurement readiness. Public scan results are not certification,
+    legal advice, a security guarantee or government approval. Candidate evidence never earns verified credit.
+servers:
+  - url: https://trustready.example
+    description: Replace with the deployed TrustReady origin.
+paths:
+  /api/scan:
+    get:
+      operationId: scanPublicRepository
+      summary: Scan a public GitHub repository
+      description: |
+        Collects a public repository snapshot pinned to an immutable commit revision, applies the selected
+        versioned TrustReady profile, and returns evidence-backed control statuses and the path to 100.
+        The endpoint fails closed if evidence collection is incomplete.
+      parameters:
+        - name: repo
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uri
+          example: https://github.com/mikelninh/gitlaw
+      responses:
+        '200':
+          description: Completed public repository scan.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicScan'
+        '400':
+          description: Invalid input or scan failure.
+        '422':
+          description: Evidence collection was incomplete and TrustReady refused to score it as complete.
+  /v1/manifests/verify:
+    post:
+      operationId: verifyManifest
+      summary: Verify TrustReady assurance manifest integrity
+      description: |
+        Free/open verification primitive. Checks manifest integrity without requiring the verifier to trust TrustReady.
+        It does not independently recollect the underlying evidence.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Integrity result.
+components:
+  schemas:
+    PublicScan:
+      type: object
+      required: [schema, subject, profile, score, source_revision, controls, path_to_100, boundary]
+      properties:
+        schema:
+          type: string
+        subject:
+          type: object
+          additionalProperties: true
+        profile:
+          type: object
+          required: [id, version, title]
+          properties:
+            id: { type: string }
+            version: { type: string }
+            title: { type: string }
+        score:
+          type: number
+          minimum: 0
+          maximum: 100
+        coverage_pct:
+          type: number
+          minimum: 0
+          maximum: 100
+        ready:
+          type: boolean
+        source_revision:
+          type: string
+        observed_at:
+          type: string
+          format: date-time
+        provenance_complete:
+          type: boolean
+        blocking_findings:
+          type: array
+          items: { type: string }
+        controls:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        path_to_100:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        boundary:
+          type: string
+x-trustready-commercial-capabilities:
+  free:
+    - public repository scan
+    - control gap explanation
+    - assurance manifest integrity verification
+  paid:
+    - private repository / private evidence collection
+    - scan history and continuous monitoring
+    - CI gates and webhooks
+    - remediation patch generation
+    - runtime E3 proof execution
+    - authenticated E4 attestation workflow
+    - buyer packs and trust centres
+    - procurement questionnaire automation
+    - enterprise/government reviewer workspaces
