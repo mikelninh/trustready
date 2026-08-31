@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TrustReady — Evidence-backed AI readiness</title>
+  <meta name="description" content="Scan a public GitHub repository for evidence-backed AI procurement readiness and get an inspectable path to 100/100." />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">T</span><span>TrustReady</span></div>
+    <div class="top-meta">Evidence, not vibes.</div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="eyebrow">AI PROCUREMENT READINESS</div>
+      <h1>Can a buyer trust this AI system?</h1>
+      <p class="hero-copy">Paste a public GitHub repository. TrustReady finds candidate evidence, verifies only what deterministic rules can prove, and shows the shortest honest path to 100/100.</p>
+
+      <form id="scan-form" class="scan-box">
+        <label for="repo">Public GitHub repository</label>
+        <div class="scan-row">
+          <input id="repo" name="repo" type="url" value="https://github.com/mikelninh/gitlaw" placeholder="https://github.com/owner/repo" required />
+          <button id="scan-button" type="submit">Scan repository</button>
+        </div>
+        <div class="scan-hint">Public beta · repository evidence only · runtime and organisational claims require stronger proof.</div>
+      </form>
+    </section>
+
+    <section id="loading" class="loading hidden">
+      <div class="spinner"></div>
+      <div><strong>Collecting immutable evidence…</strong><span>Pinning the scan to the current commit, hashing evidence, then applying the versioned control rules.</span></div>
+    </section>
+
+    <section id="error" class="error-card hidden"></section>
+
+    <section id="result" class="result hidden">
+      <div class="result-head">
+        <div>
+          <div class="eyebrow" id="subject-source">PUBLIC REPOSITORY SCAN</div>
+          <h2 id="subject-name">Repository</h2>
+          <div class="revision" id="revision"></div>
+        </div>
+        <div class="score-card">
+          <div class="score-ring" id="score-ring"><span id="score">0</span><small>/100</small></div>
+          <div class="score-label">Readiness score</div>
+        </div>
+      </div>
+
+      <div class="truth-strip">
+        <strong>What this score means</strong>
+        <span id="boundary"></span>
+      </div>
+
+      <div class="metrics" id="metrics"></div>
+
+      <section class="panel roadmap-panel">
+        <div class="panel-title-row">
+          <div>
+            <div class="eyebrow">PATH TO 100</div>
+            <h3>Your shortest honest route</h3>
+          </div>
+          <div class="small-muted">Same profile. Same rules. New proof only.</div>
+        </div>
+        <div id="roadmap" class="roadmap"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-title-row">
+          <div>
+            <div class="eyebrow">CONTROL GRAPH</div>
+            <h3>Every point is inspectable</h3>
+          </div>
+          <div class="filter-row">
+            <button class="filter active" data-filter="all">All</button>
+            <button class="filter" data-filter="unresolved">Unresolved</button>
+            <button class="filter" data-filter="verified">Verified</button>
+          </div>
+        </div>
+        <div id="controls" class="controls"></div>
+      </section>
+
+      <section class="panel next-action-panel">
+        <div>
+          <div class="eyebrow">WHAT HAPPENS NEXT</div>
+          <h3>TrustReady should close safe gaps, then prove the hard ones.</h3>
+          <p>For E1/E2 gaps, the product can prepare the missing evidence artifact and re-scan it. For E3, it creates an environment-bound proof task. For E4, it routes the claim to an authenticated accountable human. No manual score override.</p>
+        </div>
+        <button id="copy-plan" class="secondary-button">Copy remediation plan</button>
+      </section>
+    </section>
+  </main>
+
+  <footer>
+    <span>TrustReady</span>
+    <span>100/100 means every control in the selected profile is backed by accepted evidence or authorised attestation — not universal compliance or certification.</span>
+  </footer>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
