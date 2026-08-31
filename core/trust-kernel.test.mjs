@@ -87,14 +87,15 @@ test('contradictory evidence blocks even when strong evidence exists', () => {
   assert.equal(evaluation.ready, false)
 })
 
-test('attestation-only controls require authorised E4 attestation', () => {
+test('attestation-only controls require explicit authorised E4 attestation', () => {
   const p = profile({ attestation_only: true, minimum_strength: 'E4' })
   const insufficient = evaluateProfile({ profile: p, evidence: [ev({ strength: 'E4', authorised_attestation: false })], now })
-  assert.equal(insufficient.results[0].status, 'verified')
-  // An E4 record can satisfy the generic minimum-strength rule, but it is only labelled
-  // `attested` when explicitly marked as an authorised attestation.
+  assert.equal(insufficient.results[0].status, 'partial')
+  assert.equal(insufficient.ready, false)
+
   const accepted = evaluateProfile({ profile: p, evidence: [ev({ strength: 'E4', authorised_attestation: true })], now })
   assert.equal(accepted.results[0].status, 'attested')
+  assert.equal(accepted.ready, true)
 })
 
 test('manifest integrity is reproducible and mutation is detected', () => {
