@@ -3,9 +3,11 @@ locals {
     "aiplatform.googleapis.com",
     "accesscontextmanager.googleapis.com",
     "cloudkms.googleapis.com",
+    "cloudresourcemanager.googleapis.com",
     "compute.googleapis.com",
     "dlp.googleapis.com",
     "dns.googleapis.com",
+    "iam.googleapis.com",
     "serviceusage.googleapis.com",
     "storage.googleapis.com",
   ])
@@ -13,6 +15,8 @@ locals {
   restricted_services = [
     "aiplatform.googleapis.com",
     "cloudkms.googleapis.com",
+    "cloudresourcemanager.googleapis.com",
+    "compute.googleapis.com",
     "dlp.googleapis.com",
     "storage.googleapis.com",
   ]
@@ -22,6 +26,17 @@ locals {
     "egress-enforcement",
     "network-attestation",
     "evidence-manifest",
+  ])
+
+  gateway_project_roles = toset([
+    "roles/aiplatform.user",
+    "roles/browser",
+    "roles/cloudkms.signerVerifier",
+    "roles/compute.viewer",
+    "roles/dlp.user",
+    "roles/serviceusage.serviceUsageConsumer",
+    "roles/storage.objectCreator",
+    "roles/storage.objectViewer",
   ])
 }
 
@@ -114,6 +129,69 @@ resource "google_dns_record_set" "googleapis_cname" {
   type         = "CNAME"
   ttl          = 300
   rrdatas      = ["restricted.googleapis.com."]
+}
+
+resource "google_service_account" "legal_gateway" {
+  project      = var.project_id
+  account_id   = "trustready-legal-gateway"
+  display_name = "TrustReady Legal mandate-shadow gateway"
+  depends_on   = [google_project_service.required]
+}
+
+resource "google_project_iam_member" "gateway_roles" {
+  for_each = local.gateway_project_roles
+  project  = var.project_id
+  role     = each.value
+  member   = "serviceAccount:${google_service_account.legal_gateway.email}"
+}
+
+# The actual mandate-shadow sender is a dedicated VM with one private IPv4 NIC.
+# Runtime qualification reads its identity from the local GCE metadata server
+# and cross-checks instance ID, zone, network, subnet and service account against
+# the Compute API before any network posture can become ready.
+resource "google_compute_instance" "legal_gateway" {
+  name                      = "trustready-legal-gateway"
+  project                   = var.project_id
+  zone                      = var.gateway_zone
+  machine_type              = var.gateway_machine_type
+  can_ip_forward            = false
+  deletion_protection       = true
+  allow_stopping_for_update = true
+
+  boot_disk {
+    initialize_params {
+      image = "debian-cloud/debian-12"
+      size  = 20
+      type  = "pd-balanced"
+    }
+  }
+
+  network_interface {
+    subnetwork = google_compute_subnetwork.legal.id
+    stack_type = "IPV4_ONLY"
+    # Intentionally no access_config and no ipv6_access_config.
+  }
+
+  service_account {
+    email  = google_service_account.legal_gateway.email
+    scopes = ["https://www.googleapis.com/auth/cloud-platform"]
+  }
+
+  metadata = {
+    disable-legacy-endpoints = "true"
+  }
+
+  shielded_instance_config {
+    enable_secure_boot          = true
+    enable_vtpm                 = true
+    enable_integrity_monitoring = true
+  }
+
+  depends_on = [
+    google_compute_firewall.allow_restricted_googleapis,
+    google_compute_firewall.deny_all_egress,
+    google_project_iam_member.gateway_roles,
+  ]
 }
 
 resource "google_kms_key_ring" "legal" {
