@@ -24,6 +24,7 @@ const requiredV12Regressions = [
   'infrastructure qualification authenticates runtime and WORM before any DLP canary inspection',
   'mandate pipeline authenticates runtime network and WORM resource before mandate DLP inspection',
   'mandate pipeline binds all four HSM key projects to authenticated runtime project before egress or DLP',
+  'mandate pipeline commits immutable pre-send intent before provider credentials or send',
   'IaC pins the evidence bucket into the dedicated gateway metadata',
 ]
 
@@ -61,6 +62,8 @@ const report = {
       worm_checked_before_mandate_dlp: true,
       infrastructure_qualifier_time_internally_controlled: true,
       runtime_hsm_keys_bound_to_authenticated_project: true,
+      immutable_pre_send_intent_required_before_external_egress: true,
+      post_send_worm_failure_cannot_be_invisible: true,
     },
   },
   verdict: {
