@@ -10,7 +10,9 @@ Auditor stance: adversarial pre-audit / readiness assessment. This is not indepe
 
 **Real mandate shadow opinion: NOT READY — operating, legal/privacy and independent evidence still missing.**
 
-The five concrete code findings from the first pre-audit have been closed and converted into regression tests. The full repository test suite passes 74/74 and the scanner benchmark remains exact on its 30 labelled cases. CI and dogfood are green. The new `npm run audit:legal` command now runs in CI and deliberately refuses to infer production readiness from repository evidence alone.
+The five concrete code findings from the first pre-audit have been closed and converted into regression tests. A second meta-audit then found that the first automated audit input could have trusted a self-authored JSON file containing `verified:true`; that promotion path has also been removed. Live and independent evidence must now be signed by separately trusted keys whose public-key fingerprints are pinned outside the evidence file.
+
+The full repository test suite now passes **80/80** and the scanner benchmark remains exact on its 30 labelled cases. CI and dogfood are green. `npm run audit:legal` runs in CI and deliberately refuses to infer production readiness from repository evidence alone.
 
 Latest automated pre-audit result:
 
@@ -60,18 +62,36 @@ Boundary note: syntactic opacity cannot prove that an upstream opaque token is s
 
 Evidence: `core/legal-evidence.mjs`; regression `evidence context rejects direct or human-readable identifiers`.
 
+### AUD-META-01 — self-authored audit evidence could promote readiness — CLOSED
+
+The initial audit CLI treated a local evidence JSON as an input source. Even with required fields, that would not establish provenance: the same operator could write the evidence and mark the claims verified.
+
+The audit now requires signed assurance envelopes and an independently supplied/pinned public-key fingerprint. Runtime/legal qualification and independent assurance use separate signing purposes and separate trust-anchor inputs. Individual claims must carry an evidence level, a SHA-256 evidence digest and fresh observation/expiry timestamps. Unsigned JSON, a wrong signer, a fingerprint mismatch, an expired claim or the wrong evidence level cannot promote readiness.
+
+Evidence: `core/legal-assurance-evidence.mjs`, `core/legal-assurance-evidence.test.mjs`, `scripts/legal-preaudit.mjs`.
+
+Boundary note: the application can enforce cryptographic provenance, but organisational independence of the trust-anchor owner must itself be established by deployment/audit governance. TrustReady must not claim that a key is independent merely because it is technically separate.
+
 ## Automated audit gate
 
-`npm run audit:legal` is now a first-class CI step. It separates four evidence classes:
+`npm run audit:legal` is a first-class CI step. It separates four evidence classes:
 
 1. engineering/repository proof;
 2. live runtime operating proof;
 3. legal/privacy governance proof;
 4. independent assurance.
 
-The audit can PASS engineering while still returning `real_mandate_shadow_ready:false`. This distinction is mandatory and must not be overridden by a score.
+The audit can PASS engineering while still returning `real_mandate_shadow_ready:false`. This distinction is mandatory and cannot be overridden by a score.
 
-Optional live evidence is supplied through `TRUSTREADY_LIVE_EVIDENCE`; a missing live evidence file cannot silently promote a deployment.
+Promotion inputs are fail-closed:
+
+- Live qualification requires `TRUSTREADY_LIVE_EVIDENCE`, `TRUSTREADY_LIVE_TRUST_KEY` and `TRUSTREADY_LIVE_TRUST_FINGERPRINT`.
+- Independent assurance requires a separate `TRUSTREADY_INDEPENDENT_EVIDENCE`, `TRUSTREADY_INDEPENDENT_TRUST_KEY` and `TRUSTREADY_INDEPENDENT_TRUST_FINGERPRINT`.
+- Runtime claims require cryptographically trusted E3/E4 evidence.
+- Legal/privacy governance claims require E4 evidence in the promotion gate.
+- Independent pentest/legal/privacy/evidence-verification claims require separately signed E4 evidence.
+
+Supplying no evidence is safe: the audit remains Engineering PASS but reports all stronger evidence classes as `MISSING_EVIDENCE`.
 
 ## Current remaining blockers
 
@@ -119,6 +139,7 @@ Still required:
 |---|---|
 | Repository engineering | **PASS** |
 | Known first-audit code findings | **CLOSED + REGRESSION COVERED** |
+| Audit-evidence provenance boundary | **PASS — PINNED SIGNED INPUT REQUIRED** |
 | Synthetic/public-data shadow | **PASS** |
 | Pre-audit / evidence-room readiness | **PASS** |
 | Real mandate-data external-AI shadow | **NOT READY — LIVE/GOVERNANCE/INDEPENDENT EVIDENCE MISSING** |
@@ -128,8 +149,8 @@ Still required:
 
 ## Product conclusion
 
-TrustReady is now able to enforce the core principle behind `always audit-ready`: a green build is evidence for engineering quality, not a substitute for operating effectiveness or independent assurance.
+TrustReady now enforces the core principle behind `always audit-ready`: a green build is evidence for engineering quality, not a substitute for operating effectiveness or independent assurance. Even the evidence fed into the auditor must have provenance and an external trust boundary.
 
-The next promotion must be evidence-driven:
+The next promotion is evidence-driven:
 
-`PRE-AUDIT READY` → deploy exact environment → collect signed E3 runtime evidence → complete legal/privacy E4 evidence → independent pentest/review → clean re-audit → `REAL MANDATE SHADOW READY`.
+`PRE-AUDIT READY` → deploy exact environment → collect signed E3 runtime evidence → complete authorised legal/privacy E4 evidence → independent pentest/review → independently sign/verify evidence → clean re-audit → `REAL MANDATE SHADOW READY`.
