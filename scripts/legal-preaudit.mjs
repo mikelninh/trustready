@@ -7,7 +7,7 @@ function findInt(text,re){const m=text.match(re);return m?Number(m[1]):null}
 function parseLastJson(text){const start=text.lastIndexOf('\n{');const raw=(start>=0?text.slice(start+1):text).trim();try{return JSON.parse(raw)}catch{return null}}
 
 const legalTestFiles=[
-  'core/legal-assurance-evidence.test.mjs','core/legal-evidence.test.mjs','core/legal-final-p1-regressions.test.mjs','core/legal-gcp-bound-transport.test.mjs','core/legal-gcp-iac.test.mjs',
+  'core/legal-assurance-evidence.test.mjs','core/legal-evidence.test.mjs','core/legal-final-p1-regressions.test.mjs','core/legal-codex-p1-v9-regressions.test.mjs','core/legal-gcp-bound-transport.test.mjs','core/legal-gcp-iac.test.mjs',
   'core/legal-gcp-infrastructure.test.mjs','core/legal-gcp-network-probe.test.mjs','core/legal-gcp-runtime-pipeline.test.mjs','core/legal-gcp-worm-bundle.test.mjs',
   'core/legal-production-gates.test.mjs','core/legal-replay-store.test.mjs','core/legal-runtime-fortress.test.mjs'
 ]
@@ -20,7 +20,7 @@ const requiredFiles=[
   'architecture/legal-control-matrix.md','architecture/legal-evidence-pack.md','architecture/legal-trust-standard.md',
   'core/legal-key-identity.mjs','core/legal-runtime-fortress.mjs','core/legal-dlp.mjs','core/legal-network.mjs','core/legal-evidence.mjs','core/legal-assurance-evidence.mjs',
   'core/legal-gcp-hsm.mjs','core/legal-gcp-dlp.mjs','core/legal-gcp-network-enforcement.mjs','core/legal-gcp-bound-transport.mjs','core/legal-gcp-runtime-identity.mjs','core/legal-gcp-worm.mjs','core/legal-gcp-qualification.mjs','core/legal-vertex-proposal.mjs','core/legal-gcp-runtime-pipeline.mjs',
-  'infra/gcp-legal-shadow/main.tf','infra/gcp-legal-shadow/README.md'
+  'core/legal-codex-p1-v9-regressions.test.mjs','infra/gcp-legal-shadow/main.tf','infra/gcp-legal-shadow/README.md'
 ]
 const filesPresent=requiredFiles.every(p=>fs.existsSync(p))
 const regressionNames=[
@@ -50,6 +50,10 @@ const regressionNames=[
   'caller-set rooted boolean cannot satisfy production root trust',
   'self-asserted hardware backed signers cannot become production HSM signers',
   'local audit evidence cannot self-promote organizational independence',
+  'inherited or copied adapter brands cannot become production adapters',
+  'production DLP configuration cannot be weakened by caller options',
+  'production WORM retention cannot be lowered below mandatory floor',
+  'toJSON getters functions sparse arrays and custom prototypes are denied before security I/O',
   'IaC encodes IPv4-only network-wide deny-all with only restricted Google API VIP allow',
   'IaC provisions a dedicated private gateway workload with one service identity and no external IP config',
   'VPC Service Controls project identity is derived from project_id rather than caller-supplied number',
@@ -103,8 +107,8 @@ const engineering=tests.ok&&fail===0&&filesPresent&&regressionsPresent&&producti
 const verdict=evaluateLocalPromotionGates({engineering,live_complete:liveComplete,legal_complete:legalComplete,independent_evidence_complete:independentEvidenceComplete,distinct_trust_anchors:distinctTrustAnchors,organizational_independence_claim:organizationalIndependenceClaim})
 const independentStatus=independentEvidenceComplete&&distinctTrustAnchors&&organizationalIndependenceClaim?'EVIDENCE_COMPLETE_EXTERNAL_VERDICT_REQUIRED':'MISSING_EVIDENCE'
 const report={
-  schema:'trustready-legal-preaudit-v8',generated_at:now.toISOString(),
-  engineering:{status:engineering?'PASS':'FAIL',legal_tests:{pass,fail},regression_findings_closed:regressionsPresent,missing_regressions:missingRegressions,production_actions_physically_blocked:productionActionsPhysicallyBlocked,production_adapter_boundary_required:true,synthetic_production_candidate_disabled:true,scanner:benchmarkJson?.metrics||null},
+  schema:'trustready-legal-preaudit-v9',generated_at:now.toISOString(),
+  engineering:{status:engineering?'PASS':'FAIL',legal_tests:{pass,fail},regression_findings_closed:regressionsPresent,missing_regressions:missingRegressions,production_actions_physically_blocked:productionActionsPhysicallyBlocked,production_adapter_boundary_required:true,exact_instance_adapter_trust_required:true,strict_request_snapshot_required:true,production_dlp_minimum_fixed:true,production_worm_retention_floor_seconds:2592000,synthetic_production_candidate_disabled:true,scanner:benchmarkJson?.metrics||null},
   live_runtime:{status:liveComplete?'PASS':'MISSING_EVIDENCE',assurance_signature_valid:liveAssurance.valid,trust_fingerprint:liveAssurance.valid?liveAssurance.trust_fingerprint:null,reason:liveAssurance.valid?null:liveAssurance.reason,required:liveRequired,observed:liveObserved},
   legal_governance:{status:legalComplete?'PASS':'MISSING_EVIDENCE',assurance_signature_valid:legalAssurance.valid,trust_fingerprint:legalAssurance.valid?legalAssurance.trust_fingerprint:null,reason:legalAssurance.valid?null:legalAssurance.reason,required:legalRequired,observed:legalObserved},
   independent_assurance:{status:independentStatus,assurance_signature_valid:independentAssurance.valid,trust_fingerprint:independentAssurance.valid?independentAssurance.trust_fingerprint:null,reason:independentAssurance.valid?null:independentAssurance.reason,required:independentRequired,observed:independentObserved,distinct_trust_anchors:distinctTrustAnchors,organizational_independence_claim:organizationalIndependenceClaim,local_pre_audit_can_issue_final_verdict:false},
