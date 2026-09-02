@@ -6,6 +6,22 @@ output "subnetwork_name" {
   value = google_compute_subnetwork.legal.name
 }
 
+output "gateway_instance_name" {
+  value = google_compute_instance.legal_gateway.name
+}
+
+output "gateway_instance_id" {
+  value = google_compute_instance.legal_gateway.instance_id
+}
+
+output "gateway_zone" {
+  value = google_compute_instance.legal_gateway.zone
+}
+
+output "gateway_service_account" {
+  value = google_service_account.legal_gateway.email
+}
+
 output "evidence_bucket" {
   value = google_storage_bucket.evidence.name
 }
@@ -27,12 +43,16 @@ output "hsm_key_version_prefixes" {
 
 output "qualification_profile" {
   value = {
-    project_id             = var.project_id
-    project_number         = data.google_project.current.number
-    region                 = var.region
-    subnetwork             = google_compute_subnetwork.legal.name
-    service_perimeter_name = google_access_context_manager_service_perimeter.legal.name
-    protected_resource     = "projects/${data.google_project.current.number}"
-    evidence_bucket        = google_storage_bucket.evidence.name
+    project_id              = var.project_id
+    project_number          = data.google_project.current.number
+    region                  = var.region
+    subnetwork              = google_compute_subnetwork.legal.name
+    service_perimeter_name  = google_access_context_manager_service_perimeter.legal.name
+    protected_resource      = "projects/${data.google_project.current.number}"
+    gateway_instance_name   = google_compute_instance.legal_gateway.name
+    gateway_instance_id     = google_compute_instance.legal_gateway.instance_id
+    gateway_zone            = google_compute_instance.legal_gateway.zone
+    gateway_service_account = google_service_account.legal_gateway.email
+    evidence_bucket         = google_storage_bucket.evidence.name
   }
 }
