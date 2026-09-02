@@ -2,6 +2,7 @@ import crypto from 'node:crypto'
 
 export const ZONES = Object.freeze({ PUBLIC: 0, INTERNAL: 1, PERSONAL: 2, MANDATE: 3, RESTRICTED: 4 })
 const SUPPORTED_SIGNATURE_ALGORITHMS = new Set(['Ed25519', 'ECDSA_P256_SHA256'])
+const ROOTED_KEY_STORES = new WeakSet()
 
 export function canonicalize(value) {
   if (Array.isArray(value)) return `[${value.map(canonicalize).join(',')}]`
@@ -40,9 +41,6 @@ function verifySignature(publicKey, body, signature, algorithm) {
     const data = Buffer.from(canonicalize(body))
     const sig = Buffer.from(signature, 'base64')
     if (algorithm === 'Ed25519') return crypto.verify(null, data, asPublicKey(publicKey), sig)
-    // Google Cloud KMS EC_SIGN_P256_SHA256 receives SHA-256(data) and signs that digest.
-    // Node's ECDSA `verify(null, digest, ...)` hashes the digest again, so it is not a raw-digest verifier.
-    // Verifying with SHA-256 over the original canonical bytes produces exactly the digest KMS signed.
     return crypto.verify('sha256', data, asPublicKey(publicKey), sig)
   } catch {
     return false
@@ -78,6 +76,10 @@ export function createKeyTrustStore(entries = []) {
       return [...map.values()].map(({ public_key, ...rest }) => rest)
     },
   }
+}
+
+export function isRootedKeyTrustStore(store) {
+  return Boolean(store && typeof store === 'object' && ROOTED_KEY_STORES.has(store))
 }
 
 export function signEnvelope({ body, private_key, key_id, purpose }) {
@@ -155,7 +157,7 @@ export function createRootedKeyTrustStore({ signed_keyring, pinned_root_public_k
     not_after: key.not_after,
   }))
   const inner = createKeyTrustStore(entries)
-  return {
+  const store = {
     rooted: true,
     root_fingerprint: fingerprint,
     keyring_version: body.version,
@@ -164,6 +166,8 @@ export function createRootedKeyTrustStore({ signed_keyring, pinned_root_public_k
     revoke: inner.revoke,
     snapshot: inner.snapshot,
   }
+  ROOTED_KEY_STORES.add(store)
+  return Object.freeze(store)
 }
 
 export function issueIdentityAssertion({ subject, tenant_id, session_id, roles = [], matter_permissions = [], mfa, auth_time, expires_at, private_key, key_id, now = new Date() }) {
