@@ -27,7 +27,7 @@ async function providerToken(provider) {
 export async function runGcpMandateShadowPipeline({
   identity_assertion, matter_authorization, request, provider_passport, key_store, runtime_state,
   dlp_scanner, dlp_signer, network_collector, egress_signer, restricted_transport, provider_token_provider,
-  evidence_signer, worm_store, release, bundle_id, now = new Date(),
+  evidence_signer, worm_store, release, bundle_id, now = new Date(), clock = () => new Date(),
 }) {
   if (runtime_state?.production !== true) return notReady('PRODUCTION_STATE_REQUIRED', 'production runtime state required')
   if (!request?.tenant_id || !request?.matter_id || !request?.policy_version || !release || !bundle_id) return notReady('CONTEXT_REQUIRED', 'complete mandate pipeline context required')
@@ -68,24 +68,36 @@ export async function runGcpMandateShadowPipeline({
   if (!signatureIsHsm(prepared.network_attestation, postures.network.key_version_name)) { cancelPreparedGoogleApiRequest(prepared.prepared); return notReady('NETWORK_HSM_PROOF_INVALID', 'network attestation was not signed by qualified network HSM key') }
 
   const boundRequest = { ...request, transport_request_fingerprint: prepared.request_fingerprint }
-  const decision = authorizeLegalEgress({ identity_assertion, matter_authorization, dlp_attestation: dlp.attestation, request: boundRequest, provider_passport, key_store, runtime_state, network_probe: () => prepared.network_attestation, egress_enforcement_attestation: enforcement.attestation, now })
-  if (!decision.allowed) { cancelPreparedGoogleApiRequest(prepared.prepared); return notReady('LEGAL_EGRESS_DENIED', decision.reason, { decision }) }
+  const initialDecision = authorizeLegalEgress({ identity_assertion, matter_authorization, dlp_attestation: dlp.attestation, request: boundRequest, provider_passport, key_store, runtime_state, network_probe: () => prepared.network_attestation, egress_enforcement_attestation: enforcement.attestation, now })
+  if (!initialDecision.allowed) { cancelPreparedGoogleApiRequest(prepared.prepared); return notReady('LEGAL_EGRESS_DENIED', initialDecision.reason, { decision: initialDecision }) }
 
   let accessToken
   try { accessToken = await providerToken(provider_token_provider) } catch (error) { cancelPreparedGoogleApiRequest(prepared.prepared); return notReady('PROVIDER_AUTH_DENIED', error.message) }
-  const providerResponse = await sendPreparedGoogleApiRequest({ transport: restricted_transport, prepared: prepared.prepared, headers: { authorization: `Bearer ${accessToken}` } })
-  if (!providerResponse.ok) return notReady('PROVIDER_REQUEST_FAILED', providerResponse.reason || `provider status ${providerResponse.status || 0}`)
+
+  let finalDecision = initialDecision
+  const providerResponse = await sendPreparedGoogleApiRequest({
+    transport: restricted_transport,
+    prepared: prepared.prepared,
+    headers: { authorization: `Bearer ${accessToken}` },
+    clock,
+    before_send: (sendNow) => {
+      finalDecision = authorizeLegalEgress({ identity_assertion, matter_authorization, dlp_attestation: dlp.attestation, request: boundRequest, provider_passport, key_store, runtime_state, network_probe: () => prepared.network_attestation, egress_enforcement_attestation: enforcement.attestation, now: sendNow })
+      return finalDecision.allowed ? true : { allowed: false, reason: `fresh legal egress denied: ${finalDecision.reason}` }
+    },
+  })
+  if (!providerResponse.ok) return notReady('PROVIDER_REQUEST_FAILED', providerResponse.reason || `provider status ${providerResponse.status || 0}`, { decision: finalDecision })
+  if (!finalDecision.allowed) return notReady('FRESH_LEGAL_EGRESS_DENIED', finalDecision.reason || 'fresh pre-send authorization denied')
   if (providerResponse.request_fingerprint !== prepared.request_fingerprint || providerResponse.body_fingerprint !== vertex.request_fingerprint) return notReady('TRANSPORT_BINDING_FAILED', 'provider request did not preserve the attested target/body binding')
   const proposal = parseVertexProposalResponse(providerResponse.body)
   if (!proposal.valid) return notReady('MODEL_PROPOSAL_DENIED', proposal.reason)
 
   const artifacts = {
-    'decision.json': decision,
+    'decision.json': finalDecision,
     'dlp-attestation.json': dlp.attestation,
     'egress-enforcement.json': enforcement.attestation,
     'network-attestation.json': prepared.network_attestation,
     'proposal-proof.json': { proposal_type: proposal.proposal.type, proposal_hash: proposal.proposal_hash, provider_response_fingerprint: providerResponse.response_fingerprint, transport_request_fingerprint: prepared.request_fingerprint, source_ref_count: Array.isArray(proposal.proposal.source_refs) ? proposal.proposal.source_refs.length : 0 },
-    'runtime-summary.json': { tenant_id: request.tenant_id, matter_id_hash: `sha256:${sha256(request.matter_id)}`, provider_id: request.provider_id, use_case: request.use_case, policy_version: request.policy_version, release, decision_id: decision.decision_id, recorded_at: now.toISOString() },
+    'runtime-summary.json': { tenant_id: request.tenant_id, matter_id_hash: `sha256:${sha256(request.matter_id)}`, provider_id: request.provider_id, use_case: request.use_case, policy_version: request.policy_version, release, decision_id: finalDecision.decision_id, recorded_at: now.toISOString() },
   }
   const manifest = buildEvidenceManifest({ tenant: request.tenant_id, release, policy_version: request.policy_version, artifacts, generated_at: now.toISOString() })
   let signedManifest
@@ -94,5 +106,5 @@ export async function runGcpMandateShadowPipeline({
   const committed = await commitEvidenceBundleToWorm({ store: worm_store, signed_manifest: signedManifest, key_store, artifacts, bundle_id, now })
   if (!committed.committed) return notReady('WORM_COMMIT_FAILED', committed.reason || committed.code, { committed })
 
-  return { status: 'CANDIDATE', code: 'CANDIDATE_FOR_REAL_MANDATE_SHADOW_PILOT', decision, proposal: proposal.proposal, evidence: { bundle_id, manifest_hash: committed.manifest_hash, commit_receipt: committed.commit_receipt }, proofs: { dlp_hsm_key: postures.dlp.key_version_name, egress_hsm_key: postures.egress.key_version_name, network_hsm_key: postures.network.key_version_name, evidence_hsm_key: postures.evidence.key_version_name, network_profile: useCase.network_profile, transport_request_fingerprint: prepared.request_fingerprint } }
+  return { status: 'CANDIDATE', code: 'CANDIDATE_FOR_REAL_MANDATE_SHADOW_PILOT', decision: finalDecision, proposal: proposal.proposal, evidence: { bundle_id, manifest_hash: committed.manifest_hash, commit_receipt: committed.commit_receipt }, proofs: { dlp_hsm_key: postures.dlp.key_version_name, egress_hsm_key: postures.egress.key_version_name, network_hsm_key: postures.network.key_version_name, evidence_hsm_key: postures.evidence.key_version_name, network_profile: useCase.network_profile, transport_request_fingerprint: prepared.request_fingerprint } }
 }
