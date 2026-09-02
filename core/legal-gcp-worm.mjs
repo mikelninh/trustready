@@ -1,10 +1,14 @@
 import { canonicalize, sha256, signEnvelopeWithSigner } from './legal-key-identity.mjs'
 import { verifyEvidenceBundle } from './legal-evidence.mjs'
 
+const WORM_STORE_BRAND = Symbol('trustready.gcs-worm-store')
+const TEST_WORM_STORE_BRAND = Symbol('trustready.test-gcs-worm-store')
+const NATIVE_FETCH = typeof globalThis.fetch === 'function' ? globalThis.fetch.bind(globalThis) : null
+
 async function token(provider) {
   if (typeof provider !== 'function') throw new Error('GCP access token provider required')
   const value = await provider()
-  if (typeof value !== 'string' || value.length < 16) throw new Error('GCP access token unavailable')
+  if (typeof value !== 'string' || value.length < 16 || /[\r\n]/.test(value)) throw new Error('GCP access token unavailable')
   return value
 }
 
@@ -32,24 +36,30 @@ export function evaluateBucketLockPosture({ bucket, min_retention_seconds = 30 *
   return { ready: true, provider: 'gcs-bucket-lock', bucket: bucket.name, retention_seconds: retention, retention_locked: true, uniform_bucket_level_access: true, public_access_prevention: 'enforced' }
 }
 
-export function createGcsWormEvidenceStore({ bucket, fetch_impl = globalThis.fetch, token_provider, min_retention_seconds = 30 * 24 * 60 * 60 }) {
+function buildStore({ bucket, fetch_impl, token_provider, min_retention_seconds, test_only }) {
   if (!/^[a-z0-9._-]{3,222}$/.test(bucket || '')) throw new TypeError('valid GCS bucket required')
+  if (typeof fetch_impl !== 'function') throw new TypeError('GCS WORM fetch implementation required')
   const metadataUrl = `https://storage.googleapis.com/storage/v1/b/${encodeURIComponent(bucket)}`
-  return {
+  const store = {
+    [WORM_STORE_BRAND]: true,
+    ...(test_only ? { [TEST_WORM_STORE_BRAND]: true } : {}),
     backend: 'gcs-bucket-lock', bucket,
     async posture() {
       const response = await request({ fetch_impl, token_provider, url: metadataUrl })
-      return evaluateBucketLockPosture({ bucket: await response.json(), min_retention_seconds })
+      let metadata
+      try { metadata = await response.json() } catch { return { ready: false, reason: 'bucket metadata response invalid' } }
+      return evaluateBucketLockPosture({ bucket: metadata, min_retention_seconds })
     },
     async append({ object_name, bytes, content_type = 'application/octet-stream' }) {
       if (!/^[A-Za-z0-9._/-]{1,512}$/.test(object_name || '') || object_name.includes('..') || object_name.startsWith('/')) throw new TypeError('safe immutable object name required')
       const buffer = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes)
-      const posture = await this.posture()
+      const posture = await store.posture()
       if (!posture.ready) return { stored: false, reason: posture.reason }
       const uploadUrl = `https://storage.googleapis.com/upload/storage/v1/b/${encodeURIComponent(bucket)}/o?uploadType=media&ifGenerationMatch=0&name=${encodeURIComponent(object_name)}`
       let response
       try { response = await request({ fetch_impl, token_provider, url: uploadUrl, method: 'POST', body: buffer, content_type }) } catch (error) { return { stored: false, reason: error.message } }
-      const metadata = await response.json()
+      let metadata
+      try { metadata = await response.json() } catch { return { stored: false, reason: 'GCS write receipt invalid' } }
       if (metadata?.bucket !== bucket || metadata?.name !== object_name || !metadata?.generation) return { stored: false, reason: 'GCS write receipt invalid' }
       return {
         stored: true, provider: 'gcs-bucket-lock', bucket, object_name,
@@ -58,6 +68,24 @@ export function createGcsWormEvidenceStore({ bucket, fetch_impl = globalThis.fet
       }
     },
   }
+  return Object.freeze(store)
+}
+
+export function isProductionGcsWormEvidenceStore(store) {
+  return store?.[WORM_STORE_BRAND] === true && store?.[TEST_WORM_STORE_BRAND] !== true && typeof store.append === 'function' && typeof store.posture === 'function'
+}
+
+export function isTestGcsWormEvidenceStore(store) {
+  return store?.[WORM_STORE_BRAND] === true && store?.[TEST_WORM_STORE_BRAND] === true && typeof store.append === 'function' && typeof store.posture === 'function'
+}
+
+export function createGcsWormEvidenceStore({ bucket, token_provider, min_retention_seconds = 30 * 24 * 60 * 60 }) {
+  if (typeof NATIVE_FETCH !== 'function') throw new TypeError('native fetch required for production GCS WORM store')
+  return buildStore({ bucket, fetch_impl: NATIVE_FETCH, token_provider, min_retention_seconds, test_only: false })
+}
+
+export function createGcsWormEvidenceStoreForTest({ bucket, fetch_impl, token_provider, min_retention_seconds = 30 * 24 * 60 * 60 }) {
+  return buildStore({ bucket, fetch_impl, token_provider, min_retention_seconds, test_only: true })
 }
 
 export async function createSignedWormReceipt({ store, signer, object_name, bytes, tenant_id, policy_version, now = new Date() }) {
@@ -94,7 +122,6 @@ export async function commitEvidenceBundleToWorm({ store, signed_manifest, key_s
     receipts.push(receipt)
   }
 
-  // The manifest is deliberately written last. Its presence is the immutable commit marker.
   const manifestBytes = Buffer.from(canonicalize(signed_manifest), 'utf8')
   const commitReceipt = await store.append({ object_name: `bundles/${bundle_id}/COMMITTED.manifest.json`, bytes: manifestBytes, content_type: 'application/json' })
   if (!commitReceipt?.stored || !commitReceipt.retention_expiration_time) return { committed: false, code: 'COMMIT_MARKER_WRITE_FAILED', receipts }
