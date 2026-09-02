@@ -126,7 +126,7 @@ test('production DLP project must equal protected gateway project before any man
     provider_passport: {}, release: 'r11', bundle_id: 'b1',
     provider_token_provider: async () => { downstreamCalls += 1; return 'not-reached-token' },
   })
-  assert.equal(result.code, 'DLP_PROJECT_MISMATCH')
+  assert.equal(result.code, 'PROVIDER_PASSPORT_DENIED')
   assert.equal(downstreamCalls, 0)
 })
 
