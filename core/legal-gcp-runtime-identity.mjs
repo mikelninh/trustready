@@ -15,9 +15,7 @@ async function metadataText(fetch_impl, path) {
   let response
   try {
     response = await fetch_impl(`${METADATA_BASE}/${path}`, {
-      method: 'GET',
-      redirect: 'error',
-      headers: { 'Metadata-Flavor': 'Google' },
+      method: 'GET', redirect: 'error', headers: { 'Metadata-Flavor': 'Google' },
     })
   } catch {
     throw new Error('GCE metadata server unavailable')
@@ -48,16 +46,18 @@ function buildProvider({ fetch_impl, test_only }) {
           metadataText(fetch_impl, 'instance/network-interfaces/0/network'),
           metadataText(fetch_impl, 'instance/network-interfaces/0/subnetwork'),
           metadataText(fetch_impl, 'instance/service-accounts/default/email'),
+          metadataText(fetch_impl, 'instance/attributes/trustready-evidence-bucket'),
         ])
       } catch (error) {
         return { ready: false, reason: error.message }
       }
-      const [project_id, instance_name, instance_id, zone_ref, network_ref, subnetwork_ref, service_account_email] = values
+      const [project_id, instance_name, instance_id, zone_ref, network_ref, subnetwork_ref, service_account_email, evidence_bucket] = values
       const zone = tail(zone_ref), network_name = tail(network_ref), subnetwork_name = tail(subnetwork_ref)
       if (!/^[a-z][a-z0-9-]{4,28}[a-z0-9]$/.test(project_id)) return { ready: false, reason: 'GCE runtime project identity invalid' }
       if (!/^[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?$/.test(instance_name)) return { ready: false, reason: 'GCE runtime instance identity invalid' }
       if (!/^\d+$/.test(instance_id) || !zone || !network_name || !subnetwork_name) return { ready: false, reason: 'GCE runtime topology identity incomplete' }
       if (!/^[^@\s]+@[^@\s]+\.iam\.gserviceaccount\.com$/.test(service_account_email)) return { ready: false, reason: 'GCE runtime service account identity invalid' }
+      if (!/^[a-z0-9][a-z0-9._-]{1,220}[a-z0-9]$/.test(evidence_bucket)) return { ready: false, reason: 'GCE runtime evidence bucket identity invalid' }
       return {
         ready: true,
         provider: 'gce-local-metadata',
@@ -68,6 +68,7 @@ function buildProvider({ fetch_impl, test_only }) {
         network_name,
         subnetwork_name,
         service_account_email,
+        evidence_bucket,
         metadata_endpoint: '169.254.169.254',
         metadata_flavor_verified: true,
       }
@@ -82,14 +83,8 @@ function buildProvider({ fetch_impl, test_only }) {
 export function isTrustedGceRuntimeIdentityProvider(provider) {
   return PRODUCTION_RUNTIME_IDENTITIES.has(provider) || TEST_RUNTIME_IDENTITIES.has(provider)
 }
-
-export function isProductionGceRuntimeIdentityProvider(provider) {
-  return PRODUCTION_RUNTIME_IDENTITIES.has(provider)
-}
-
-export function isTestGceRuntimeIdentityProvider(provider) {
-  return TEST_RUNTIME_IDENTITIES.has(provider)
-}
+export function isProductionGceRuntimeIdentityProvider(provider) { return PRODUCTION_RUNTIME_IDENTITIES.has(provider) }
+export function isTestGceRuntimeIdentityProvider(provider) { return TEST_RUNTIME_IDENTITIES.has(provider) }
 
 export function createGceRuntimeIdentityProvider() {
   if (typeof NATIVE_FETCH !== 'function') throw new TypeError('native fetch required for production GCE metadata identity')
