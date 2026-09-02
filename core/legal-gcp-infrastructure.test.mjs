@@ -9,6 +9,7 @@ import { createGceRuntimeIdentityProviderForTest } from './legal-gcp-runtime-ide
 import { createGcsWormEvidenceStoreForTest, evaluateBucketLockPosture } from './legal-gcp-worm.mjs'
 import { qualifyGcpLegalInfrastructure } from './legal-gcp-qualification.mjs'
 
+const NOW = new Date('2026-09-02T12:00:00Z')
 const KEY_NAME = 'projects/trustready-prod/locations/europe-west3/keyRings/legal/cryptoKeys/root/cryptoKeyVersions/1'
 const ec = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
 const publicPem = ec.publicKey.export({ type: 'spki', format: 'pem' }).toString()
