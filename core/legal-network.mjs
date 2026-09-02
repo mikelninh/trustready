@@ -32,7 +32,7 @@ export function evaluateNetworkEgress({ endpoint, provider, use_case, region, ne
   const attested = verifyEnvelope({ envelope, key_store, purpose: 'network_attestation', now })
   if (!attested.valid) return { allowed: false, reason: 'network attestation invalid or signer untrusted' }
   const proof = attested.body
-  if (proof.schema !== 'trustready-network-attestation-v1' || proof.tls !== true || proof.certificate_valid !== true || proof.redirected === true || proof.hostname !== url.hostname || proof.region !== region || proof.endpoint !== url.origin) {
+  if (proof.schema !== 'trustready-network-attestation-v1' || proof.tls !== true || proof.certificate_valid !== true || proof.redirected !== false || proof.hostname !== url.hostname || proof.region !== region || proof.endpoint !== url.origin) {
     return { allowed: false, reason: 'network path evidence invalid' }
   }
   const profile = validateNetworkProfile(policy, proof)
