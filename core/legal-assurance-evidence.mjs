@@ -48,6 +48,20 @@ export function trustAnchorsDistinct(...assurances){
   return new Set(fingerprints).size===fingerprints.length
 }
 
+// A local pre-audit can verify evidence completeness, but it cannot establish
+// organisational independence about itself. Even perfect locally supplied E4
+// envelopes therefore may only advance to an external-verdict candidate.
+export function evaluateLocalPromotionGates({engineering=false,live_complete=false,legal_complete=false,independent_evidence_complete=false,distinct_trust_anchors=false,organizational_independence_claim=false}={}){
+  const candidateForExternalVerdict=Boolean(engineering&&live_complete&&legal_complete&&independent_evidence_complete&&distinct_trust_anchors&&organizational_independence_claim)
+  return{
+    pre_audit_ready:Boolean(engineering),
+    candidate_for_external_assurance:candidateForExternalVerdict,
+    external_final_verdict_required:true,
+    real_mandate_shadow_ready:false,
+    independently_assured:false,
+  }
+}
+
 export function loadPinnedAssuranceFromEnv({evidence_env,key_env,fingerprint_env,purpose,now=new Date(),env=process.env}){
   const evidencePath=env[evidence_env],keyPath=env[key_env],expectedFingerprint=env[fingerprint_env]
   if(!evidencePath&&!keyPath&&!expectedFingerprint)return{valid:false,reason:'assurance evidence not supplied',missing:true,purpose}
