@@ -4,6 +4,7 @@ import https from 'node:https'
 import net from 'node:net'
 import tls from 'node:tls'
 import { sha256, signEnvelopeWithSigner } from './legal-key-identity.mjs'
+import { isProductionGoogleCloudHsmSigner } from './legal-gcp-hsm.mjs'
 
 const RESTRICTED_VIP = new Set(['199.36.153.4', '199.36.153.5', '199.36.153.6', '199.36.153.7'])
 const TRANSPORT_BRAND = Symbol('trustready.restricted-google-api-transport')
@@ -42,14 +43,12 @@ function synchronousClock(clock) {
   if (value && typeof value.then === 'function') return null
   return validDate(value)
 }
-function testRuntime() { return process.env.NODE_ENV === 'test' }
-function trustedTransport(transport) {
-  if (transport?.[TRANSPORT_BRAND] !== true) return false
-  if (transport?.[TEST_ONLY_TRANSPORT_BRAND] === true && !testRuntime()) return false
-  return true
-}
+function trustedTransport(transport) { return transport?.[TRANSPORT_BRAND] === true }
 export function isProductionRestrictedGoogleApiTransport(transport) {
-  return transport?.[TRANSPORT_BRAND] === true && transport?.[TEST_ONLY_TRANSPORT_BRAND] !== true
+  return trustedTransport(transport) && transport?.[TEST_ONLY_TRANSPORT_BRAND] !== true
+}
+export function isTestRestrictedGoogleApiTransport(transport) {
+  return trustedTransport(transport) && transport?.[TEST_ONLY_TRANSPORT_BRAND] === true
 }
 
 function openTls({ address, hostname, tls_connect, timeout_ms }) {
@@ -64,14 +63,8 @@ function openTls({ address, hostname, tls_connect, timeout_ms }) {
     }
     try {
       socket = tls_connect({ host: address, port: 443, servername: hostname, rejectUnauthorized: true, ALPNProtocols: ['http/1.1'] })
-      socket.setTimeout?.(timeout_ms, () => {
-        if (settled) return closeSocket(socket)
-        fail(new Error('restricted TLS timeout'))
-      })
-      socket.once?.('error', () => {
-        if (settled) return closeSocket(socket)
-        fail(new Error('restricted TLS connection failed'))
-      })
+      socket.setTimeout?.(timeout_ms, () => { if (!settled) fail(new Error('restricted TLS timeout')) })
+      socket.once?.('error', () => { if (!settled) fail(new Error('restricted TLS connection failed')) })
       socket.once?.('secureConnect', () => {
         if (settled) return
         const remote = normalizeRemote(socket.remoteAddress)
@@ -112,11 +105,11 @@ function buildTransport({ signer, resolve4, tls_connect, https_request, timeout_
 }
 
 export function createRestrictedGoogleApiTransport({ signer, timeout_ms = 5000, max_request_bytes = 1024 * 1024, max_response_bytes = 2 * 1024 * 1024 }) {
+  if (!isProductionGoogleCloudHsmSigner(signer)) throw new TypeError('production restricted transport requires production Google Cloud HSM signer')
   return buildTransport({ signer, resolve4: NATIVE_RESOLVE4, tls_connect: NATIVE_TLS_CONNECT, https_request: NATIVE_HTTPS_REQUEST, timeout_ms, max_request_bytes, max_response_bytes, test_only: false })
 }
 
 export function createRestrictedGoogleApiTransportForTest({ signer, resolve4, tls_connect, https_request, timeout_ms = 5000, max_request_bytes = 1024 * 1024, max_response_bytes = 2 * 1024 * 1024 }) {
-  if (!testRuntime()) throw new TypeError('custom restricted transport dependencies are test-only')
   return buildTransport({ signer, resolve4, tls_connect, https_request, timeout_ms, max_request_bytes, max_response_bytes, test_only: true })
 }
 
@@ -199,9 +192,7 @@ export async function sendPreparedGoogleApiRequest({ transport, prepared, header
     let resolved = false
     const finish = (result) => { if (resolved) return; resolved = true; try { agent.destroy() } catch {}; resolve(result) }
     try {
-      req = transport.https_request(new URL(state.href), {
-        method: 'POST', agent, headers: requestHeaders,
-      }, (res) => {
+      req = transport.https_request(new URL(state.href), { method: 'POST', agent, headers: requestHeaders }, (res) => {
         if (res.socket !== state.socket || normalizeRemote(res.socket?.remoteAddress) !== state.connected_address) {
           closeSocket(state.socket)
           return finish({ ok: false, reason: 'HTTP request did not use attested TLS socket' })
