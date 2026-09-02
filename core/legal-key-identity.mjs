@@ -194,10 +194,23 @@ export function createRootedKeyTrustStore({ signed_keyring, pinned_root_public_k
   const sig = snapshot.signature
   if (sig.purpose !== 'trust_root' || !verifySignature(pinned_root_public_key, snapshot.body, sig.value, sig.algorithm)) throw new Error('root keyring signature invalid')
   const body = snapshot.body
-  if (body.schema !== 'trustready-rooted-keyring-v1' || parseTime(body.valid_until) <= now.getTime() || !Array.isArray(body.keys) || body.keys.length === 0) throw new Error('root keyring invalid or expired')
+  const keyringExpiry = parseTime(body.valid_until)
+  if (body.schema !== 'trustready-rooted-keyring-v1' || keyringExpiry <= now.getTime() || !Array.isArray(body.keys) || body.keys.length === 0) throw new Error('root keyring invalid or expired')
   const entries = body.keys.map((key) => ({ key_id: key.key_id, purpose: key.purpose, public_key: key.public_key_pem, not_before: key.not_before, not_after: key.not_after }))
   const inner = createKeyTrustStore(entries)
-  const store = { rooted: true, root_fingerprint: fingerprint, keyring_version: body.version, root_signature_algorithm: sig.algorithm, resolve: inner.resolve, revoke: inner.revoke, snapshot: inner.snapshot }
+  const store = {
+    rooted: true,
+    root_fingerprint: fingerprint,
+    keyring_version: body.version,
+    keyring_valid_until: body.valid_until,
+    root_signature_algorithm: sig.algorithm,
+    resolve(keyId, purpose, resolveNow = new Date()) {
+      if (!(resolveNow instanceof Date) || Number.isNaN(resolveNow.getTime()) || resolveNow.getTime() >= keyringExpiry) return null
+      return inner.resolve(keyId, purpose, resolveNow)
+    },
+    revoke: inner.revoke,
+    snapshot: inner.snapshot,
+  }
   ROOTED_KEY_STORES.add(store)
   return Object.freeze(store)
 }
