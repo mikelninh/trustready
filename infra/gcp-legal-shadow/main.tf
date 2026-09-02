@@ -13,6 +13,7 @@ locals {
   ])
 
   restricted_services = [
+    "accesscontextmanager.googleapis.com",
     "aiplatform.googleapis.com",
     "cloudkms.googleapis.com",
     "cloudresourcemanager.googleapis.com",
