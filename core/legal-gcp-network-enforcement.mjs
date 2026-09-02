@@ -90,13 +90,14 @@ function targetScoped(rule) {
 
 function isDenyAll(rule, protectedNetwork) {
   return rule.network === protectedNetwork && !targetScoped(rule) && rule.direction === 'EGRESS' &&
-    rule.destinationRanges.includes('0.0.0.0/0') && rule.denied.some((entry) => entry.IPProtocol === 'all') && rule.disabled !== true
+    Array.isArray(rule.destinationRanges) && rule.destinationRanges.includes('0.0.0.0/0') &&
+    Array.isArray(rule.denied) && rule.denied.some((entry) => entry.IPProtocol === 'all') && rule.disabled !== true
 }
 
 function isRestrictedVipAllow(rule, protectedNetwork) {
   return rule.network === protectedNetwork && !targetScoped(rule) && rule.direction === 'EGRESS' &&
-    rule.destinationRanges.length === 1 && rule.destinationRanges[0] === RESTRICTED_GOOGLE_VIP &&
-    rule.allowed.length === 1 && rule.allowed[0].IPProtocol === 'tcp' &&
+    Array.isArray(rule.destinationRanges) && rule.destinationRanges.length === 1 && rule.destinationRanges[0] === RESTRICTED_GOOGLE_VIP &&
+    Array.isArray(rule.allowed) && rule.allowed.length === 1 && rule.allowed[0].IPProtocol === 'tcp' &&
     Array.isArray(rule.allowed[0].ports) && rule.allowed[0].ports.length === 1 && rule.allowed[0].ports[0] === '443' && rule.disabled !== true
 }
 
