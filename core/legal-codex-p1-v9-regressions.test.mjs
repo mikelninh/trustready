@@ -1,9 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import crypto from 'node:crypto'
-import { createRootedKeyTrustStore, publicKeyFingerprint, signKeyring } from './legal-key-identity.mjs'
+import { createKeyTrustStore, createRootedKeyTrustStore, publicKeyFingerprint, signEnvelope, signKeyring, verifyEnvelope } from './legal-key-identity.mjs'
 import { createGoogleCloudHsmSigner, createGoogleCloudHsmSignerForTest, isProductionGoogleCloudHsmSigner } from './legal-gcp-hsm.mjs'
-import { createGoogleSensitiveDataScanner, createGoogleSensitiveDataScannerForTest, isProductionGoogleSensitiveDataScanner, legalDlpConfigFingerprint } from './legal-gcp-dlp.mjs'
+import { createGoogleSensitiveDataScanner, createGoogleSensitiveDataScannerForTest, isProductionGoogleSensitiveDataScanner, productionLegalDlpConfigFingerprint } from './legal-gcp-dlp.mjs'
 import { createGceRuntimeIdentityProviderForTest, isProductionGceRuntimeIdentityProvider } from './legal-gcp-runtime-identity.mjs'
 import { createGcpNetworkPostureCollector, createGcpNetworkPostureCollectorForTest, isProductionGcpNetworkPostureCollector } from './legal-gcp-network-enforcement.mjs'
 import { createRestrictedGoogleApiTransport, createRestrictedGoogleApiTransportForTest, isProductionRestrictedGoogleApiTransport } from './legal-gcp-bound-transport.mjs'
@@ -48,7 +48,10 @@ test('production DLP configuration cannot be weakened by caller options', () => 
   assert.throws(() => createGoogleSensitiveDataScanner({ project_id: 'trustready-prod', token_provider: token, max_findings: 1 }), /approved legal info-type set, likelihood and finding limit/)
   assert.throws(() => createGoogleSensitiveDataScanner({ project_id: 'trustready-prod', token_provider: token, location: 'us' }), /approved EU location/)
   assert.throws(() => createGoogleSensitiveDataScanner({ project_id: 'trustready-prod', token_provider: token, location: 'global' }), /approved EU location/)
-  assert.equal(isProductionGoogleSensitiveDataScanner(createGoogleSensitiveDataScanner({ project_id: 'trustready-prod', token_provider: token })), true)
+  const scanner = createGoogleSensitiveDataScanner({ project_id: 'trustready-prod', token_provider: token })
+  assert.equal(isProductionGoogleSensitiveDataScanner(scanner), true)
+  assert.equal(scanner.scanner_config_fingerprint, productionLegalDlpConfigFingerprint({ project_id: 'trustready-prod' }))
+  assert.notEqual(scanner.scanner_config_fingerprint, productionLegalDlpConfigFingerprint({ project_id: 'trustready-other' }))
 })
 
 test('production WORM retention cannot be lowered below mandatory floor', () => {
@@ -58,10 +61,43 @@ test('production WORM retention cannot be lowered below mandatory floor', () => 
   assert.equal(isProductionGcsWormEvidenceStore(createGcsWormEvidenceStore({ bucket: 'trustready-evidence', token_provider: token })), true)
 })
 
+test('signed envelope verification rejects Proxy bodies before signature trust is granted', () => {
+  const pair = crypto.generateKeyPairSync('ed25519')
+  const signed = signEnvelope({ body: { schema: 'test-v1', tenant_id: 'tenant-a', mfa: false }, private_key: pair.privateKey, key_id: 'identity-key', purpose: 'identity' })
+  const envelope = { body: new Proxy({ schema: 'test-v1', tenant_id: 'tenant-a', mfa: false }, {}), signature: { ...signed.signature } }
+  const store = createKeyTrustStore([{ key_id: 'identity-key', purpose: 'identity', public_key: pair.publicKey }])
+  const verified = verifyEnvelope({ envelope, key_store: store, purpose: 'identity' })
+  assert.equal(verified.valid, false)
+  assert.match(verified.reason, /immutable plain JSON/)
+})
+
+test('verified signed body is an immutable snapshot rather than the caller live object', () => {
+  const pair = crypto.generateKeyPairSync('ed25519')
+  const signed = signEnvelope({ body: { schema: 'test-v1', permissions: ['read'], mfa: false }, private_key: pair.privateKey, key_id: 'identity-key', purpose: 'identity' })
+  const liveBody = { schema: 'test-v1', permissions: ['read'], mfa: false }
+  const envelope = { body: liveBody, signature: { ...signed.signature } }
+  const store = createKeyTrustStore([{ key_id: 'identity-key', purpose: 'identity', public_key: pair.publicKey }])
+  const verified = verifyEnvelope({ envelope, key_store: store, purpose: 'identity' })
+  assert.equal(verified.valid, true)
+  assert.notEqual(verified.body, liveBody)
+  assert.equal(Object.isFrozen(verified.body), true)
+  assert.equal(Object.isFrozen(verified.body.permissions), true)
+  liveBody.mfa = true
+  liveBody.permissions.push('egress')
+  assert.equal(verified.body.mfa, false)
+  assert.deepEqual([...verified.body.permissions], ['read'])
+})
+
+test('production mandate pipeline rejects caller-controlled now and clock before any trust decision', async () => {
+  const historical = new Date('2020-01-01T00:00:00Z')
+  assert.equal((await runGcpMandateShadowPipeline({ now: historical, runtime_state: { production: true } })).code, 'CALLER_TIME_DENIED')
+  assert.equal((await runGcpMandateShadowPipeline({ clock: () => historical, runtime_state: { production: true } })).code, 'CALLER_TIME_DENIED')
+})
+
 function rootedStore() {
   const root = crypto.generateKeyPairSync('ed25519')
   const leaf = crypto.generateKeyPairSync('ed25519')
-  const signed = signKeyring({ keys: [{ key_id: 'leaf', purpose: 'identity', public_key: leaf.publicKey }], version: 'v9', valid_until: '2026-12-31T00:00:00Z', private_key: root.privateKey, key_id: 'offline-root' })
+  const signed = signKeyring({ keys: [{ key_id: 'leaf', purpose: 'identity', public_key: leaf.publicKey }], version: 'v11', valid_until: '2026-12-31T00:00:00Z', private_key: root.privateKey, key_id: 'offline-root' })
   return createRootedKeyTrustStore({ signed_keyring: signed, pinned_root_public_key: root.publicKey, expected_root_fingerprint: publicKeyFingerprint(root.publicKey), now: NOW })
 }
 function productionAdapters(project_id = 'trustready-prod') {
@@ -79,22 +115,19 @@ function productionAdapters(project_id = 'trustready-prod') {
 }
 
 test('production DLP project must equal protected gateway project before any mandate scan', async () => {
-  let scanCalls = 0
+  let downstreamCalls = 0
   const adapters = productionAdapters('trustready-prod')
   const wrongProjectScanner = createGoogleSensitiveDataScanner({ project_id: 'trustready-other', token_provider: token })
-  const originalInspect = wrongProjectScanner.inspect
-  // Exact-instance/frozen adapter means inspect cannot be replaced; project mismatch must be decided before inspect anyway.
-  assert.equal(typeof originalInspect, 'function')
   const result = await runGcpMandateShadowPipeline({
     ...adapters,
     dlp_scanner: wrongProjectScanner,
-    runtime_state: { production: true, release: 'r9', dlp_config_fingerprint: legalDlpConfigFingerprint() },
-    request: { tenant_id: 'tenant-a', matter_id: 'm1', policy_version: 'legal-v9', payload: { body_excerpt: 'synthetic' } },
-    provider_passport: {}, release: 'r9', bundle_id: 'b1', now: NOW,
-    provider_token_provider: async () => { scanCalls += 1; return 'not-reached-token' },
+    runtime_state: { production: true, release: 'r11', dlp_config_fingerprint: productionLegalDlpConfigFingerprint({ project_id: 'trustready-prod' }) },
+    request: { tenant_id: 'tenant-a', matter_id: 'm1', policy_version: 'legal-v11', payload: { body_excerpt: 'synthetic' } },
+    provider_passport: {}, release: 'r11', bundle_id: 'b1',
+    provider_token_provider: async () => { downstreamCalls += 1; return 'not-reached-token' },
   })
   assert.equal(result.code, 'DLP_PROJECT_MISMATCH')
-  assert.equal(scanCalls, 0)
+  assert.equal(downstreamCalls, 0)
 })
 
 test('toJSON getters functions sparse arrays and custom prototypes are denied before security I/O', async () => {
@@ -108,9 +141,9 @@ test('toJSON getters functions sparse arrays and custom prototypes are denied be
   for (const payload of badPayloads) {
     const result = await runGcpMandateShadowPipeline({
       ...productionAdapters(),
-      runtime_state: { production: true, external_ai_enabled: true, policy_version: 'legal-v9', release: 'r9', dlp_config_fingerprint: legalDlpConfigFingerprint(), disabled_tenants: [], disabled_providers: [] },
-      request: { tenant_id: 'tenant-a', matter_id: 'm1', policy_version: 'legal-v9', payload },
-      provider_passport: {}, release: 'r9', bundle_id: 'b1', now: NOW,
+      runtime_state: { production: true, external_ai_enabled: true, policy_version: 'legal-v11', release: 'r11', dlp_config_fingerprint: productionLegalDlpConfigFingerprint({ project_id: 'trustready-prod' }), disabled_tenants: [], disabled_providers: [] },
+      request: { tenant_id: 'tenant-a', matter_id: 'm1', policy_version: 'legal-v11', payload },
+      provider_passport: {}, release: 'r11', bundle_id: 'b1',
     })
     assert.equal(result.code, 'PAYLOAD_SERIALIZATION_DENIED')
   }
