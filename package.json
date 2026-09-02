@@ -6,7 +6,7 @@
   "scripts": {
     "test": "node --test core/*.test.mjs",
     "benchmark:scanner": "node benchmarks/run-scanner-benchmark.mjs",
-    "audit:legal": "node scripts/legal-preaudit.mjs",
+    "audit:legal": "node scripts/legal-preaudit-v12.mjs",
     "audit:request-pack": "node scripts/legal-audit-request-pack.mjs",
     "verify:example": "node scripts/verify-manifest.mjs examples/assurance-manifest.json",
     "dogfood": "node scripts/dogfood.mjs"
