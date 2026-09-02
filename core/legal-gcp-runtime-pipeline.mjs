@@ -4,7 +4,7 @@ import { createSignedEgressEnforcementAttestation, isProductionGcpNetworkPosture
 import { createGceRuntimeIdentityProvider } from './legal-gcp-runtime-identity.mjs'
 import { authorizeLegalEgress, verifyProviderPassport } from './legal-runtime-fortress.mjs'
 import { buildEvidenceManifest } from './legal-evidence.mjs'
-import { commitEvidenceBundleToWorm, isProductionGcsWormEvidenceStore } from './legal-gcp-worm.mjs'
+import { commitEvidenceBundleToWorm, commitPreSendIntentToWorm, isProductionGcsWormEvidenceStore } from './legal-gcp-worm.mjs'
 import { cancelPreparedGoogleApiRequest, isProductionRestrictedGoogleApiTransport, prepareRestrictedGoogleApiRequest, restrictedTransportPosture, sendPreparedGoogleApiRequest } from './legal-gcp-bound-transport.mjs'
 import { isProductionGoogleCloudHsmSigner } from './legal-gcp-hsm.mjs'
 import { buildVertexProposalRequest, parseVertexProposalResponse } from './legal-vertex-proposal.mjs'
@@ -174,6 +174,39 @@ export async function runGcpMandateShadowPipeline(input = {}) {
   const initialDecision = authorizeLegalEgress({ identity_assertion, matter_authorization, dlp_attestation: dlp.attestation, request: boundRequest, provider_passport, key_store, runtime_state, network_probe: () => prepared.network_attestation, egress_enforcement_attestation: enforcement.attestation, now: pipelineNow })
   if (!initialDecision.allowed) { cancelPreparedGoogleApiRequest(prepared.prepared); return notReady('LEGAL_EGRESS_DENIED', initialDecision.reason, { decision: initialDecision }) }
 
+  const preSendNow = PRODUCTION_CLOCK()
+  const preSendIntentBody = {
+    matter_id_hash: `sha256:${sha256(pipelineRequest.matter_id)}`,
+    provider_id: pipelineRequest.provider_id,
+    use_case: pipelineRequest.use_case,
+    release,
+    gateway_project_id: runtimeIdentity.project_id,
+    evidence_bucket: runtimeIdentity.evidence_bucket,
+    evidence_project_number: protectedProjectNumber,
+    initial_decision_id: initialDecision.decision_id,
+    initial_decision_hash: `sha256:${sha256(initialDecision)}`,
+    provider_passport_hash: `sha256:${sha256(providerSnapshot)}`,
+    dlp_attestation_hash: `sha256:${sha256(dlp.attestation)}`,
+    egress_enforcement_hash: `sha256:${sha256(enforcement.attestation)}`,
+    network_attestation_hash: `sha256:${sha256(prepared.network_attestation)}`,
+    transport_request_fingerprint: prepared.request_fingerprint,
+    request_body_fingerprint: prepared.body_fingerprint,
+    prepared_connection_expires_at: prepared.network_attestation.body?.expires_at || null,
+  }
+  const preSend = await commitPreSendIntentToWorm({
+    store: worm_store,
+    signer: evidence_signer,
+    intent: preSendIntentBody,
+    tenant_id: pipelineRequest.tenant_id,
+    policy_version: pipelineRequest.policy_version,
+    bundle_id,
+    expected_bucket: runtimeIdentity.evidence_bucket,
+    expected_project_number: protectedProjectNumber,
+    now: preSendNow,
+  })
+  if (!preSend.committed) { cancelPreparedGoogleApiRequest(prepared.prepared); return notReady('PRE_SEND_EVIDENCE_REQUIRED', preSend.reason || preSend.code, { pre_send: { code: preSend.code } }) }
+  if (!signatureIsHsm(preSend.signed_intent, postures.evidence.key_version_name)) { cancelPreparedGoogleApiRequest(prepared.prepared); return notReady('PRE_SEND_HSM_PROOF_INVALID', 'pre-send intent was not signed by expected evidence HSM key') }
+
   let accessToken
   try { accessToken = await providerToken(provider_token_provider) } catch (error) { cancelPreparedGoogleApiRequest(prepared.prepared); return notReady('PROVIDER_AUTH_DENIED', error.message) }
   let finalDecision = initialDecision
@@ -199,6 +232,15 @@ export async function runGcpMandateShadowPipeline(input = {}) {
     'dlp-attestation.json': dlp.attestation,
     'egress-enforcement.json': enforcement.attestation,
     'network-attestation.json': prepared.network_attestation,
+    'pre-send-intent.json': preSend.signed_intent,
+    'pre-send-intent-receipt.json': {
+      bucket: preSend.receipt.bucket,
+      project_number: preSend.receipt.project_number,
+      object_name: preSend.receipt.object_name,
+      generation: preSend.receipt.generation,
+      content_hash: preSend.receipt.content_hash,
+      retention_expiration_time: preSend.receipt.retention_expiration_time,
+    },
     'proposal-proof.json': {
       proposal_type: proposal.proposal.type,
       proposal_hash: proposal.proposal_hash,
@@ -217,6 +259,7 @@ export async function runGcpMandateShadowPipeline(input = {}) {
       gateway_project_id: runtimeIdentity.project_id,
       evidence_bucket: runtimeIdentity.evidence_bucket,
       evidence_project_number: protectedProjectNumber,
+      pre_send_intent_hash: preSend.intent_hash,
       recorded_at: evidenceNow.toISOString(),
     },
   }
@@ -225,14 +268,14 @@ export async function runGcpMandateShadowPipeline(input = {}) {
   try { signedManifest = await signEnvelopeWithSigner({ body: manifest, signer: evidence_signer, purpose: 'evidence_manifest' }) } catch (error) { return notReady('EVIDENCE_SIGNING_FAILED', error.message) }
   if (!signatureIsHsm(signedManifest, postures.evidence.key_version_name)) return notReady('EVIDENCE_HSM_PROOF_INVALID', 'evidence manifest was not signed by expected HSM key')
   const committed = await commitEvidenceBundleToWorm({ store: worm_store, signed_manifest: signedManifest, key_store, artifacts, bundle_id, now: evidenceNow })
-  if (!committed.committed) return notReady('WORM_COMMIT_FAILED', committed.reason || committed.code, { committed })
+  if (!committed.committed) return notReady('WORM_COMMIT_FAILED', committed.reason || committed.code, { committed, pre_send_intent: { hash: preSend.intent_hash, receipt: preSend.receipt } })
 
   return {
     status: 'CANDIDATE',
     code: 'CANDIDATE_FOR_REAL_MANDATE_SHADOW_PILOT',
     decision: finalDecision,
     proposal: proposal.proposal,
-    evidence: { bundle_id, manifest_hash: committed.manifest_hash, commit_receipt: committed.commit_receipt },
+    evidence: { bundle_id, pre_send_intent_hash: preSend.intent_hash, pre_send_intent_receipt: preSend.receipt, manifest_hash: committed.manifest_hash, commit_receipt: committed.commit_receipt },
     proofs: {
       dlp_hsm_key: postures.dlp.key_version_name,
       egress_hsm_key: postures.egress.key_version_name,
