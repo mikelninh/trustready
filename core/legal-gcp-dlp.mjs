@@ -7,6 +7,9 @@ export const DEFAULT_LEGAL_INFOTYPES = Object.freeze([
   'MEDICAL_RECORD_NUMBER', 'IP_ADDRESS', 'OPENAI_API_KEY', 'GCP_API_KEY', 'ANTHROPIC_API_KEY',
 ])
 export const GCP_DLP_SCANNER_VERSION = 'google-sensitive-data-protection-v3'
+const DLP_SCANNER_BRAND = Symbol('trustready.gcp-dlp-scanner')
+const TEST_DLP_SCANNER_BRAND = Symbol('trustready.test-gcp-dlp-scanner')
+const NATIVE_FETCH = typeof globalThis.fetch === 'function' ? globalThis.fetch.bind(globalThis) : null
 
 export function legalDlpConfigFingerprint({ info_types = DEFAULT_LEGAL_INFOTYPES, min_likelihood = 'POSSIBLE', max_findings = 1000 } = {}) {
   if (!Array.isArray(info_types) || info_types.length === 0) throw new TypeError('DLP infoTypes required')
@@ -24,7 +27,7 @@ export function legalDlpConfigFingerprint({ info_types = DEFAULT_LEGAL_INFOTYPES
 async function token(tokenProvider) {
   if (typeof tokenProvider !== 'function') throw new Error('GCP access token provider required')
   const value = await tokenProvider()
-  if (typeof value !== 'string' || value.length < 16) throw new Error('GCP access token unavailable')
+  if (typeof value !== 'string' || value.length < 16 || /[\r\n]/.test(value)) throw new Error('GCP access token unavailable')
   return value
 }
 
@@ -40,15 +43,19 @@ export function parseDlpInspectResponse(response) {
   return { valid: true, safe: findings.length === 0, findings_count: findings.length, detected_categories: categories }
 }
 
-export function createGoogleSensitiveDataScanner({ project_id, location = 'eu', fetch_impl = globalThis.fetch, token_provider, info_types = DEFAULT_LEGAL_INFOTYPES, min_likelihood = 'POSSIBLE', max_payload_bytes = 256 * 1024, max_findings = 1000 }) {
+function buildScanner({ project_id, location, fetch_impl, token_provider, info_types, min_likelihood, max_payload_bytes, max_findings, test_only }) {
   if (!/^[a-z][a-z0-9-]{4,62}$/.test(project_id || '')) throw new TypeError('valid GCP project id required')
   if (!/^[a-z0-9-]{2,32}$/.test(location || '')) throw new TypeError('valid DLP location required')
+  if (typeof fetch_impl !== 'function') throw new TypeError('DLP fetch implementation required')
   if (!Array.isArray(info_types) || info_types.length === 0) throw new TypeError('DLP infoTypes required')
   if (!Number.isInteger(max_findings) || max_findings < 1 || max_findings > 1000) throw new TypeError('bounded DLP max findings required')
+  if (!Number.isInteger(max_payload_bytes) || max_payload_bytes < 1 || max_payload_bytes > 1024 * 1024) throw new TypeError('bounded DLP payload limit required')
   const endpoint = `https://dlp.googleapis.com/v2/projects/${project_id}/locations/${location}/content:inspect`
   const scannerConfigFingerprint = legalDlpConfigFingerprint({ info_types, min_likelihood, max_findings })
 
-  return {
+  return Object.freeze({
+    [DLP_SCANNER_BRAND]: true,
+    ...(test_only ? { [TEST_DLP_SCANNER_BRAND]: true } : {}),
     backend: 'gcp-sensitive-data-protection', location, info_types: [...info_types], scanner_version: GCP_DLP_SCANNER_VERSION,
     scanner_config_fingerprint: scannerConfigFingerprint,
     async inspect({ payload }) {
@@ -77,7 +84,24 @@ export function createGoogleSensitiveDataScanner({ project_id, location = 'eu', 
         scanner_config_fingerprint: scannerConfigFingerprint,
       }
     },
-  }
+  })
+}
+
+export function isProductionGoogleSensitiveDataScanner(scanner) {
+  return scanner?.[DLP_SCANNER_BRAND] === true && scanner?.[TEST_DLP_SCANNER_BRAND] !== true && typeof scanner.inspect === 'function'
+}
+
+export function isTestGoogleSensitiveDataScanner(scanner) {
+  return scanner?.[DLP_SCANNER_BRAND] === true && scanner?.[TEST_DLP_SCANNER_BRAND] === true && typeof scanner.inspect === 'function'
+}
+
+export function createGoogleSensitiveDataScanner({ project_id, location = 'eu', token_provider, info_types = DEFAULT_LEGAL_INFOTYPES, min_likelihood = 'POSSIBLE', max_payload_bytes = 256 * 1024, max_findings = 1000 }) {
+  if (typeof NATIVE_FETCH !== 'function') throw new TypeError('native fetch required for production DLP scanner')
+  return buildScanner({ project_id, location, fetch_impl: NATIVE_FETCH, token_provider, info_types, min_likelihood, max_payload_bytes, max_findings, test_only: false })
+}
+
+export function createGoogleSensitiveDataScannerForTest({ project_id, location = 'eu', fetch_impl, token_provider, info_types = DEFAULT_LEGAL_INFOTYPES, min_likelihood = 'POSSIBLE', max_payload_bytes = 256 * 1024, max_findings = 1000 }) {
+  return buildScanner({ project_id, location, fetch_impl, token_provider, info_types, min_likelihood, max_payload_bytes, max_findings, test_only: true })
 }
 
 export async function createSignedDlpAttestation({ scanner, signer, tenant_id, matter_id, payload, policy_version, now = new Date(), ttl_ms = 45_000 }) {
