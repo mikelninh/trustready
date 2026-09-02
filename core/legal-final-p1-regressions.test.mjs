@@ -3,10 +3,12 @@ import assert from 'node:assert/strict'
 import crypto from 'node:crypto'
 import { EventEmitter } from 'node:events'
 import { canonicalize } from './legal-key-identity.mjs'
-import { createRestrictedGoogleApiTransport, prepareRestrictedGoogleApiRequest, sendPreparedGoogleApiRequest } from './legal-gcp-bound-transport.mjs'
+import { createRestrictedGoogleApiTransport, createRestrictedGoogleApiTransportForTest, prepareRestrictedGoogleApiRequest, sendPreparedGoogleApiRequest } from './legal-gcp-bound-transport.mjs'
 import { createGceRuntimeIdentityProvider } from './legal-gcp-runtime-identity.mjs'
 import { createGcpNetworkPostureCollector, evaluateGcpNetworkPosture } from './legal-gcp-network-enforcement.mjs'
 import { evaluateLocalPromotionGates } from './legal-assurance-evidence.mjs'
+
+process.env.NODE_ENV = 'test'
 
 const NOW = new Date('2026-09-02T17:30:00Z')
 const endpoint = 'https://europe-west3-aiplatform.googleapis.com/v1/projects/p/locations/europe-west3/models/m:generateContent'
@@ -19,10 +21,24 @@ const signer = {
 }
 function tlsFactory() { return () => { const s = new EventEmitter(); s.authorized = true; s.remoteAddress = '199.36.153.4'; s.alpnProtocol = 'http/1.1'; s.getPeerCertificate = () => ({ raw: Buffer.from('cert') }); s.setTimeout = () => s; s.destroyed = false; s.destroy = () => { s.destroyed = true }; queueMicrotask(() => s.emit('secureConnect')); return s } }
 function responseFactory(order) { return (_url, options, callback) => { order.push('https_request'); const req = new EventEmitter(); req.setTimeout = () => req; req.destroy = () => {}; req.end = () => { order.push('req_end'); const res = new EventEmitter(); res.statusCode = 200; res.socket = options.agent.createConnection({}); queueMicrotask(() => { callback(res); queueMicrotask(() => res.emit('end')) }) }; return req } }
+function testTransport({ https_request = responseFactory([]), resolve4 = async () => ['199.36.153.4'], tls_connect = tlsFactory() } = {}) {
+  return createRestrictedGoogleApiTransportForTest({ signer, resolve4, tls_connect, https_request })
+}
+
+test('production transport pins native dependencies and test dependency substitution is production-blocked', () => {
+  const evilResolve = async () => ['8.8.8.8']
+  const production = createRestrictedGoogleApiTransport({ signer, resolve4: evilResolve, tls_connect: tlsFactory(), https_request: responseFactory([]) })
+  assert.notEqual(production.resolve4, evilResolve)
+  const old = process.env.NODE_ENV
+  process.env.NODE_ENV = 'production'
+  try {
+    assert.throws(() => createRestrictedGoogleApiTransportForTest({ signer, resolve4: evilResolve, tls_connect: tlsFactory(), https_request: responseFactory([]) }), /test-only/)
+  } finally { process.env.NODE_ENV = old }
+})
 
 test('final synchronous reauthorization is the last gate before request submission', async () => {
   const order = []
-  const transport = createRestrictedGoogleApiTransport({ signer, resolve4: async () => ['199.36.153.4'], tls_connect: tlsFactory(), https_request: responseFactory(order) })
+  const transport = testTransport({ https_request: responseFactory(order) })
   const prepared = await prepareRestrictedGoogleApiRequest({ transport, endpoint, body: Buffer.from('{}'), region: 'europe-west3', now: NOW })
   const result = await sendPreparedGoogleApiRequest({ transport, prepared: prepared.prepared, clock: () => { order.push('clock'); return NOW }, before_send: () => { order.push('authorize'); return true } })
   assert.equal(result.ok, true)
@@ -31,7 +47,7 @@ test('final synchronous reauthorization is the last gate before request submissi
 
 test('async final clock or async authorization is denied before any provider request', async () => {
   let calls = 0
-  const make = () => createRestrictedGoogleApiTransport({ signer, resolve4: async () => ['199.36.153.4'], tls_connect: tlsFactory(), https_request: (...args) => { calls++; return responseFactory([])(...args) } })
+  const make = () => testTransport({ https_request: (...args) => { calls++; return responseFactory([])(...args) } })
   const a = make(), pa = await prepareRestrictedGoogleApiRequest({ transport: a, endpoint, body: Buffer.from('{}'), region: 'europe-west3', now: NOW })
   assert.equal((await sendPreparedGoogleApiRequest({ transport: a, prepared: pa.prepared, clock: async () => NOW })).ok, false)
   const b = make(), pb = await prepareRestrictedGoogleApiRequest({ transport: b, endpoint, body: Buffer.from('{}'), region: 'europe-west3', now: NOW })
@@ -51,8 +67,15 @@ const metadataValues = {
 }
 function metadataFetch(url) { const key = url.split('/computeMetadata/v1/')[1]; return Promise.resolve(metadataResponse(metadataValues[key])) }
 
-test('GCE runtime identity comes only from local metadata and rejects custom production fetch injection', async () => {
+test('GCE runtime identity comes only from module-pinned metadata fetch and rejects runtime global fetch substitution', async () => {
   assert.throws(() => createGceRuntimeIdentityProvider({ fetch_impl: metadataFetch }), /test-only/)
+  const original = globalThis.fetch
+  const attackerFetch = async () => metadataResponse('attacker-controlled')
+  globalThis.fetch = attackerFetch
+  try {
+    assert.throws(() => createGceRuntimeIdentityProvider({ fetch_impl: globalThis.fetch }), /test-only/)
+    assert.ok(createGceRuntimeIdentityProvider())
+  } finally { globalThis.fetch = original }
   const provider = createGceRuntimeIdentityProvider({ fetch_impl: metadataFetch, test_only_allow_custom_fetch: true })
   const identity = await provider.collect()
   assert.equal(identity.ready, true)
@@ -63,6 +86,15 @@ test('GCE runtime identity comes only from local metadata and rejects custom pro
 
 const NETWORK = 'https://www.googleapis.com/compute/v1/projects/trustready-prod/global/networks/legal'
 const SUBNET = 'https://www.googleapis.com/compute/v1/projects/trustready-prod/regions/europe-west3/subnetworks/legal'
+const APPROVED_SERVICES = [
+  'accesscontextmanager.googleapis.com',
+  'aiplatform.googleapis.com',
+  'cloudkms.googleapis.com',
+  'cloudresourcemanager.googleapis.com',
+  'compute.googleapis.com',
+  'dlp.googleapis.com',
+  'storage.googleapis.com',
+]
 const FIREWALLS = [
   { name: 'allow-restricted', network: NETWORK, direction: 'EGRESS', priority: 1000, destinationRanges: ['199.36.153.4/30'], allowed: [{ IPProtocol: 'tcp', ports: ['443'] }] },
   { name: 'deny-all', network: NETWORK, direction: 'EGRESS', priority: 2000, destinationRanges: ['0.0.0.0/0'], denied: [{ IPProtocol: 'all' }] },
@@ -73,7 +105,7 @@ function postureFixture() { return {
   subnetwork: { network: NETWORK, selfLink: SUBNET, privateIpGoogleAccess: true, stackType: 'IPV4_ONLY' },
   workload: { id: '987654321', name: 'trustready-legal-gateway', zone: 'https://www.googleapis.com/compute/v1/projects/trustready-prod/zones/europe-west3-a', networkInterfaces: [{ name: 'nic0', network: NETWORK, subnetwork: SUBNET, accessConfigs: [], ipv6AccessConfigs: [], stackType: 'IPV4_ONLY' }], serviceAccounts: [{ email: metadataValues['instance/service-accounts/default/email'] }] },
   runtime_identity: { ready: true, provider: 'gce-local-metadata', metadata_flavor_verified: true, project_id: 'trustready-prod', instance_name: 'trustready-legal-gateway', instance_id: '987654321', zone: 'europe-west3-a', network_name: 'legal', subnetwork_name: 'legal', service_account_email: metadataValues['instance/service-accounts/default/email'] },
-  perimeter: { name: 'accessPolicies/1/servicePerimeters/legal', status: { resources: ['projects/123'], restrictedServices: ['aiplatform.googleapis.com','storage.googleapis.com','dlp.googleapis.com','cloudkms.googleapis.com'], vpcAccessibleServices: { enableRestriction: true, allowedServices: ['RESTRICTED-SERVICES'] } } },
+  perimeter: { name: 'accessPolicies/1/servicePerimeters/legal', status: { resources: ['projects/123'], restrictedServices: [...APPROVED_SERVICES], vpcAccessibleServices: { enableRestriction: true, allowedServices: ['RESTRICTED-SERVICES'] } } },
   protected_resource: 'projects/123', project_id: 'trustready-prod', expected_nic: 'nic0',
 } }
 
@@ -82,6 +114,26 @@ test('missing accessible-services or malformed effective policy collections fail
   assert.equal(evaluateGcpNetworkPosture(missing).ready, false)
   const malformed = postureFixture(); delete malformed.effective_firewalls.firewallPolicys
   assert.equal(evaluateGcpNetworkPosture(malformed).ready, false)
+})
+
+test('malformed individual classic and policy firewall rules fail closed', () => {
+  const classic = postureFixture()
+  classic.effective_firewalls.firewalls.unshift({ name: 'malformed-allow', network: NETWORK, direction: 'EGRESS', priority: '500', destinationRanges: ['0.0.0.0/0'], allowed: [{ IPProtocol: 'tcp', ports: ['443'] }] })
+  assert.equal(evaluateGcpNetworkPosture(classic).ready, false)
+  const policy = postureFixture()
+  policy.workload_effective_firewalls.firewallPolicys = [{ type: 'SYSTEM_GLOBAL', rules: [{ priority: 1, direction: 'EGRESS', match: { destIpRanges: ['0.0.0.0/0'] } }] }]
+  assert.equal(evaluateGcpNetworkPosture(policy).ready, false)
+})
+
+test('malformed VPC-SC policy fields and any extra restricted API fail closed', () => {
+  const malformedEgress = postureFixture(); malformedEgress.perimeter.status.egressPolicies = {}
+  assert.equal(evaluateGcpNetworkPosture(malformedEgress).ready, false)
+  const malformedIngress = postureFixture(); malformedIngress.perimeter.status.ingressPolicies = 'none'
+  assert.equal(evaluateGcpNetworkPosture(malformedIngress).ready, false)
+  const extraService = postureFixture(); extraService.perimeter.status.restrictedServices.push('bigquery.googleapis.com')
+  assert.equal(evaluateGcpNetworkPosture(extraService).ready, false)
+  const duplicateService = postureFixture(); duplicateService.perimeter.status.restrictedServices.push(APPROVED_SERVICES[0])
+  assert.equal(evaluateGcpNetworkPosture(duplicateService).ready, false)
 })
 
 test('network posture rejects a hardened decoy workload that is not the executing instance', () => {
@@ -107,6 +159,7 @@ test('network collector derives workload lookup from authenticated runtime metad
   const result = await collector.collect()
   assert.equal(result.ready, true)
   assert.equal(result.protected_workload_instance_id, '987654321')
+  assert.deepEqual(result.restricted_services, [...APPROVED_SERVICES].sort())
   assert.ok(calls.some((url) => url.includes('/zones/europe-west3-a/instances/trustready-legal-gateway')))
 })
 
