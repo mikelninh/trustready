@@ -5,7 +5,7 @@ const sha='sha256:<64 lowercase hex digest of the underlying evidence artifact>'
 const claim=(name,level,what,who,validity)=>({name,evidence_level:level,what_must_be_proven:what,expected_signer_role:who,evidence_hash:sha,observed_at:'<ISO-8601>',expires_at:`<ISO-8601; ${validity}>`})
 
 const pack={
-  schema:'trustready-legal-audit-request-pack-v1',
+  schema:'trustready-legal-audit-request-pack-v2',
   deployment_id:deploymentId,
   generated_at:now,
   rule:'A claim is never accepted from this request pack itself. The reviewer must inspect the underlying evidence, compute its digest, issue the appropriate signed assurance envelope, and publish the public-key fingerprint through a separate trusted channel.',
@@ -18,7 +18,7 @@ const pack={
       claims:[
         claim('hsm','E3','Live HSM/KMS key protection, algorithm, region, key state and a successful managed signing operation.','runtime/security evidence signer','short-lived'),
         claim('dlp','E3','Live DLP/PII scanner blocks a synthetic mandate-data canary and fails closed on scanner outage.','runtime/security evidence signer','short-lived'),
-        claim('network','E3','Live workload has deny-by-default egress and reaches only the approved restricted endpoint through verified TLS/DNS path.','runtime/security evidence signer','short-lived'),
+        claim('network','E3','Live executing workload identity, exact VPC/NIC/effective-firewall/VPC-SC posture and restricted TLS transport are proven for the deployed release.','runtime/security evidence signer','short-lived'),
         claim('worm_locked','E3','Evidence store retention is irreversibly locked and a signed qualification artifact is stored under that lock.','runtime/security evidence signer','short-lived'),
         claim('secrets_manager','E3','Production secrets are sourced from the approved secrets manager and rotation/revocation was exercised.','runtime/security evidence signer','short-lived'),
         claim('backup_restore','E3','Encrypted backup exists and a dated restore exercise completed successfully.','runtime/security evidence signer','short-lived'),
@@ -53,8 +53,15 @@ const pack={
       claims:[
         claim('independent_pentest','E4','Independent penetration test covers the exact deployed service/release; critical/high findings are remediated or release-blocked.','independent security assessor','audit-cycle bounded'),
         claim('independent_legal_privacy_review','E4','Independent reviewer validates the legal/privacy evidence set and deployment assumptions.','independent German legal/privacy reviewer','audit-cycle bounded'),
-        claim('independent_evidence_verification','E4','A clean reviewer context independently verifies evidence artifacts, hashes, signatures, trust anchors and claimed mappings.','independent assurance reviewer','audit-cycle bounded')
-      ]
+        claim('independent_evidence_verification','E4','A clean reviewer context independently verifies evidence artifacts, hashes, signatures, trust anchors and claimed mappings.','independent assurance reviewer','audit-cycle bounded'),
+        claim('organizational_independence','E4','Documented evidence proves the independent assurance organisation/person is not controlled by the runtime operator or legal/privacy evidence owner and has authority to issue an independent conclusion.','independent assurance reviewer / contracting authority','audit-cycle bounded')
+      ],
+      final_verdict:{
+        required:true,
+        issued_outside_local_preaudit:true,
+        acceptable_outcomes:['PASS','PASS_WITH_FINDINGS','FAIL'],
+        requirement:'After evidence verification, an independent reviewer must issue the final deployment-specific verdict outside the TrustReady local pre-audit process. TrustReady may ingest/reference that verdict but must not manufacture it.'
+      }
     }
   },
   separation_rules:[
@@ -62,9 +69,12 @@ const pack={
     'The three pinned trust-anchor fingerprints must be distinct.',
     'The evidence file must not carry or select its own trust anchor.',
     'The reviewer must verify the underlying artifact before signing its evidence hash.',
+    'Organisational independence requires evidence beyond possession of a distinct key.',
+    'The local TrustReady pre-audit cannot issue the final independent assurance verdict.',
     'A numeric score can never override a missing mandatory claim.'
   ],
-  final_command:'npm run audit:legal'
+  local_command:'npm run audit:legal',
+  local_command_result:'Evidence completeness / candidate status only; never a final independent verdict.'
 }
 
 console.log(JSON.stringify(pack,null,2))
