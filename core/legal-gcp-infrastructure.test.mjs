@@ -102,8 +102,9 @@ test('WORM posture requires permanently locked retention, uniform access and pub
   assert.equal(evaluateBucketLockPosture({ bucket }).ready, true)
   assert.equal(evaluateBucketLockPosture({ bucket: { ...bucket, retentionPolicy: { isLocked: false, retentionPeriod: '2592000' } } }).ready, false)
   const fetch_impl = async (url) => {
+    if (url.includes('/upload/storage/v1/b/')) return jsonResponse({ bucket: bucket.name, name: 'proof.json', generation: '7', metageneration: '1', retentionExpirationTime: '2026-10-02T12:00:00Z' })
     if (url.includes('/storage/v1/b/')) return jsonResponse(bucket)
-    return jsonResponse({ bucket: bucket.name, name: 'proof.json', generation: '7', metageneration: '1', retentionExpirationTime: '2026-10-02T12:00:00Z' })
+    return jsonResponse({}, 404)
   }
   const store = createGcsWormEvidenceStore({ bucket: bucket.name, fetch_impl, token_provider: token })
   const result = await store.append({ object_name: 'proof.json', bytes: Buffer.from('proof') })
@@ -113,7 +114,7 @@ test('WORM posture requires permanently locked retention, uniform access and pub
 test('end-to-end qualification becomes CANDIDATE only after HSM + DLP + network + immutable write all prove themselves', async () => {
   const hsm_signer = { async posture() { return { ready: true, provider: 'gcp-cloud-hsm', protection_level: 'HSM', key_version_name: KEY_NAME, location: 'europe-west3', algorithm: 'EC_SIGN_P256_SHA256', public_key_fingerprint: 'sha256:key', attestation_fingerprint: 'sha256:att' } }, async sign() { return { algorithm: 'ECDSA_P256_SHA256', key_id: KEY_NAME, value: Buffer.from('sig').toString('base64') } } }
   let scans = 0
-  const dlp_scanner = { async inspect({ payload }) { scans++; return scans === 1 ? { safe: true, payload_fingerprint: 'sha256:safe', scanner_id: 'gcp-sensitive-data-protection', scanner_location: 'eu', detected_categories: [] } : { safe: false, payload_fingerprint: 'sha256:pii', scanner_id: 'gcp-sensitive-data-protection', scanner_location: 'eu', detected_categories: ['EMAIL_ADDRESS', 'IBAN_CODE'] } } }
+  const dlp_scanner = { async inspect() { scans++; return scans === 1 ? { safe: true, payload_fingerprint: 'sha256:safe', scanner_id: 'gcp-sensitive-data-protection', scanner_location: 'eu', detected_categories: [] } : { safe: false, payload_fingerprint: 'sha256:pii', scanner_id: 'gcp-sensitive-data-protection', scanner_location: 'eu', detected_categories: ['EMAIL_ADDRESS', 'IBAN_CODE'] } } }
   const network_collector = { async collect() { return { ready: true, deny_by_default: true, only_restricted_google_apis: true, provider: 'gcp-vpc-service-controls', restricted_vip: '199.36.153.4/30', perimeter_name: 'legal', deny_rule: 'deny-all', allow_rule: 'restricted-only' } } }
   const worm_store = { async posture() { return { ready: true, retention_locked: true, provider: 'gcs-bucket-lock', bucket: 'evidence', retention_seconds: 2592000 } }, async append({ bytes }) { return { stored: true, bucket: 'evidence', object_name: 'proof', generation: '1', content_hash: `sha256:${crypto.createHash('sha256').update(bytes).digest('hex')}`, retention_expiration_time: '2026-10-02T12:00:00Z' } } }
   const result = await qualifyGcpLegalInfrastructure({ hsm_signer, dlp_scanner, network_collector, worm_store, tenant_id: 'tenant-a', policy_version: 'legal-v4', release: 'r4', now: new Date('2026-09-02T12:00:00Z') })
