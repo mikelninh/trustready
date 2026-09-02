@@ -29,6 +29,7 @@ function safeHeader(name, value) {
 }
 function closeSocket(socket) { try { socket?.destroy() } catch {} }
 function transportFingerprint(href, bytes) { return `sha256:${sha256(Buffer.concat([Buffer.from(href, 'utf8'), Buffer.from('\n'), bytes]))}` }
+function validDate(value) { const d = value instanceof Date ? value : new Date(value); return Number.isFinite(d.getTime()) ? d : null }
 
 function openTls({ address, hostname, tls_connect, timeout_ms }) {
   return new Promise((resolve, reject) => {
@@ -42,8 +43,14 @@ function openTls({ address, hostname, tls_connect, timeout_ms }) {
     }
     try {
       socket = tls_connect({ host: address, port: 443, servername: hostname, rejectUnauthorized: true, ALPNProtocols: ['http/1.1'] })
-      socket.setTimeout?.(timeout_ms, () => fail(new Error('restricted TLS timeout')))
-      socket.once?.('error', () => fail(new Error('restricted TLS connection failed')))
+      socket.setTimeout?.(timeout_ms, () => {
+        if (settled) return closeSocket(socket)
+        fail(new Error('restricted TLS timeout'))
+      })
+      socket.once?.('error', () => {
+        if (settled) return closeSocket(socket)
+        fail(new Error('restricted TLS connection failed'))
+      })
       socket.once?.('secureConnect', () => {
         if (settled) return
         const remote = normalizeRemote(socket.remoteAddress)
@@ -55,6 +62,22 @@ function openTls({ address, hostname, tls_connect, timeout_ms }) {
       })
     } catch (error) { fail(error) }
   })
+}
+
+function oneShotPreparedAgent(socket) {
+  const agent = new https.Agent({ keepAlive: false, maxSockets: 1, maxFreeSockets: 0 })
+  let issued = false
+  agent.createConnection = (_options, callback) => {
+    if (issued || socket?.destroyed === true) {
+      const error = new Error('attested TLS socket unavailable or already issued')
+      if (typeof callback === 'function') queueMicrotask(() => callback(error))
+      return undefined
+    }
+    issued = true
+    if (typeof callback === 'function') queueMicrotask(() => callback(null, socket))
+    return socket
+  }
+  return agent
 }
 
 export function createRestrictedGoogleApiTransport({ signer, resolve4 = dns.resolve4, tls_connect = tls.connect, https_request = https.request, timeout_ms = 5000, max_request_bytes = 1024 * 1024, max_response_bytes = 2 * 1024 * 1024 }) {
@@ -72,6 +95,8 @@ export async function restrictedTransportPosture(transport) {
 
 export async function prepareRestrictedGoogleApiRequest({ transport, endpoint, body, region, now = new Date() }) {
   if (transport?.[TRANSPORT_BRAND] !== true) return { ready: false, reason: 'untrusted restricted transport' }
+  const observedAt = validDate(now)
+  if (!observedAt) return { ready: false, reason: 'valid preparation time required' }
   const url = endpointUrl(endpoint)
   if (!url || !region) return { ready: false, reason: 'restricted Google API endpoint/region required' }
   const bytes = requestBytes(body)
@@ -85,17 +110,21 @@ export async function prepareRestrictedGoogleApiRequest({ transport, endpoint, b
   const href = url.href
   const bodyFingerprint = `sha256:${sha256(bytes)}`
   const requestFingerprint = transportFingerprint(href, bytes)
+  const expiresAt = new Date(observedAt.getTime() + 30_000)
   const bodyAttestation = {
     schema: 'trustready-network-attestation-v1', endpoint: url.origin, target_url: href, hostname: url.hostname, region,
     tls: true, certificate_valid: true, redirected: false, route_class: 'restricted-googleapis',
     resolved_addresses: addresses, connected_address: tlsProof.remote_address, peer_fingerprint: tlsProof.peer_fingerprint,
     body_fingerprint: bodyFingerprint, request_fingerprint: requestFingerprint,
-    observed_at: now.toISOString(), expires_at: new Date(now.getTime() + 30_000).toISOString(),
+    observed_at: observedAt.toISOString(), expires_at: expiresAt.toISOString(),
   }
   let attestation
   try { attestation = await signEnvelopeWithSigner({ body: bodyAttestation, signer: transport.signer, purpose: 'network_attestation' }) } catch (error) { closeSocket(tlsProof.socket); return { ready: false, reason: `network attestation signing failed: ${error.message}` } }
   const prepared = Object.freeze({ [PREPARED_BRAND]: true })
-  PREPARED_STATE.set(prepared, { transport, socket: tlsProof.socket, href, bytes, body_fingerprint: bodyFingerprint, request_fingerprint: requestFingerprint, peer_fingerprint: tlsProof.peer_fingerprint, connected_address: tlsProof.remote_address, used: false })
+  PREPARED_STATE.set(prepared, {
+    transport, socket: tlsProof.socket, href, bytes, body_fingerprint: bodyFingerprint, request_fingerprint: requestFingerprint,
+    peer_fingerprint: tlsProof.peer_fingerprint, connected_address: tlsProof.remote_address, expires_at_ms: expiresAt.getTime(), used: false,
+  })
   return { ready: true, body_fingerprint: bodyFingerprint, request_fingerprint: requestFingerprint, network_attestation: attestation, prepared }
 }
 
@@ -108,21 +137,39 @@ export function cancelPreparedGoogleApiRequest(prepared) {
   return true
 }
 
-export function sendPreparedGoogleApiRequest({ transport, prepared, headers = {} }) {
+export async function sendPreparedGoogleApiRequest({ transport, prepared, headers = {}, clock = () => new Date(), before_send = null }) {
+  const state = prepared?.[PREPARED_BRAND] === true ? PREPARED_STATE.get(prepared) : null
+  if (transport?.[TRANSPORT_BRAND] !== true || !state || state.transport !== transport || state.used === true) return { ok: false, reason: 'prepared restricted request invalid or already consumed' }
+  for (const [name, value] of Object.entries(headers)) if (!safeHeader(name, value)) { cancelPreparedGoogleApiRequest(prepared); return { ok: false, reason: 'unsafe outbound header denied' } }
+
+  let sendNow
+  try { sendNow = validDate(await clock()) } catch { sendNow = null }
+  if (!sendNow) { cancelPreparedGoogleApiRequest(prepared); return { ok: false, reason: 'current send time unavailable' } }
+  if (sendNow.getTime() >= state.expires_at_ms) { cancelPreparedGoogleApiRequest(prepared); return { ok: false, reason: 'prepared network attestation expired before send' } }
+  if (state.socket?.destroyed === true) { cancelPreparedGoogleApiRequest(prepared); return { ok: false, reason: 'attested TLS socket expired or closed before send' } }
+
+  if (before_send !== null) {
+    if (typeof before_send !== 'function') { cancelPreparedGoogleApiRequest(prepared); return { ok: false, reason: 'invalid pre-send authorization gate' } }
+    let gate
+    try { gate = await before_send(sendNow) } catch { gate = null }
+    const allowed = gate === true || gate?.allowed === true
+    if (!allowed) { cancelPreparedGoogleApiRequest(prepared); return { ok: false, reason: gate?.reason || 'pre-send authorization denied' } }
+    let afterGate
+    try { afterGate = validDate(await clock()) } catch { afterGate = null }
+    if (!afterGate || afterGate.getTime() >= state.expires_at_ms || state.socket?.destroyed === true) { cancelPreparedGoogleApiRequest(prepared); return { ok: false, reason: 'prepared network attestation expired during pre-send authorization' } }
+  }
+
+  state.used = true
+  const requestHeaders = { 'content-type': 'application/json', accept: 'application/json', 'content-length': String(state.bytes.length), connection: 'close', ...headers }
+  const agent = oneShotPreparedAgent(state.socket)
   return new Promise((resolve) => {
-    const state = prepared?.[PREPARED_BRAND] === true ? PREPARED_STATE.get(prepared) : null
-    if (transport?.[TRANSPORT_BRAND] !== true || !state || state.transport !== transport || state.used === true) return resolve({ ok: false, reason: 'prepared restricted request invalid or already consumed' })
-    for (const [name, value] of Object.entries(headers)) if (!safeHeader(name, value)) { cancelPreparedGoogleApiRequest(prepared); return resolve({ ok: false, reason: 'unsafe outbound header denied' }) }
-    state.used = true
-    const requestHeaders = { 'content-type': 'application/json', accept: 'application/json', 'content-length': String(state.bytes.length), connection: 'close', ...headers }
     let req
     let responseBytes = 0
     let resolved = false
-    const finish = (result) => { if (resolved) return; resolved = true; resolve(result) }
+    const finish = (result) => { if (resolved) return; resolved = true; try { agent.destroy() } catch {}; resolve(result) }
     try {
       req = transport.https_request(new URL(state.href), {
-        method: 'POST', agent: false, headers: requestHeaders,
-        createConnection: () => state.socket,
+        method: 'POST', agent, headers: requestHeaders,
       }, (res) => {
         if (res.socket !== state.socket || normalizeRemote(res.socket?.remoteAddress) !== state.connected_address) {
           closeSocket(state.socket)
