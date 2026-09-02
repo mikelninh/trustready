@@ -1,17 +1,18 @@
-import { sha256, signEnvelopeWithSigner } from './legal-key-identity.mjs'
-import { createSignedDlpAttestation } from './legal-gcp-dlp.mjs'
-import { createSignedEgressEnforcementAttestation } from './legal-gcp-network-enforcement.mjs'
+import { isRootedKeyTrustStore, sha256, signEnvelopeWithSigner } from './legal-key-identity.mjs'
+import { createSignedDlpAttestation, isProductionGoogleSensitiveDataScanner } from './legal-gcp-dlp.mjs'
+import { createSignedEgressEnforcementAttestation, isProductionGcpNetworkPostureCollector } from './legal-gcp-network-enforcement.mjs'
 import { authorizeLegalEgress } from './legal-runtime-fortress.mjs'
 import { buildEvidenceManifest } from './legal-evidence.mjs'
-import { commitEvidenceBundleToWorm } from './legal-gcp-worm.mjs'
-import { cancelPreparedGoogleApiRequest, prepareRestrictedGoogleApiRequest, restrictedTransportPosture, sendPreparedGoogleApiRequest } from './legal-gcp-bound-transport.mjs'
+import { commitEvidenceBundleToWorm, isProductionGcsWormEvidenceStore } from './legal-gcp-worm.mjs'
+import { cancelPreparedGoogleApiRequest, isProductionRestrictedGoogleApiTransport, prepareRestrictedGoogleApiRequest, restrictedTransportPosture, sendPreparedGoogleApiRequest } from './legal-gcp-bound-transport.mjs'
+import { isProductionGoogleCloudHsmSigner } from './legal-gcp-hsm.mjs'
 import { buildVertexProposalRequest, parseVertexProposalResponse } from './legal-vertex-proposal.mjs'
 
 function notReady(code, reason, extra = {}) { return { status: 'NOT_READY', code, reason, ...extra } }
 function cryptoKeyIdentity(keyVersionName) { return typeof keyVersionName === 'string' && keyVersionName.includes('/cryptoKeyVersions/') ? keyVersionName.split('/cryptoKeyVersions/')[0] : null }
 
 async function hsmPosture(signer, label) {
-  if (!signer || signer.hardware_backed !== true || typeof signer.posture !== 'function') throw new Error(`${label} must be a hardware-backed signer`)
+  if (!isProductionGoogleCloudHsmSigner(signer)) throw new Error(`${label} must be a production Google Cloud HSM signer`)
   const posture = await signer.posture()
   if (!posture?.ready || posture.protection_level !== 'HSM' || posture.algorithm !== 'EC_SIGN_P256_SHA256' || !posture.key_version_name || !cryptoKeyIdentity(posture.key_version_name)) throw new Error(`${label} HSM posture invalid`)
   return posture
@@ -24,12 +25,26 @@ async function providerToken(provider) {
   return value
 }
 
+function productionAdaptersReady({ key_store, dlp_scanner, dlp_signer, network_collector, egress_signer, restricted_transport, evidence_signer, worm_store }) {
+  if (!isRootedKeyTrustStore(key_store)) return { ready: false, code: 'ROOT_TRUST_REQUIRED', reason: 'production mandate pipeline requires internally verified rooted key trust' }
+  if (!isProductionGoogleSensitiveDataScanner(dlp_scanner)) return { ready: false, code: 'PRODUCTION_DLP_ADAPTER_REQUIRED', reason: 'production mandate pipeline requires production Google Sensitive Data Protection scanner' }
+  if (!isProductionGcpNetworkPostureCollector(network_collector)) return { ready: false, code: 'PRODUCTION_NETWORK_COLLECTOR_REQUIRED', reason: 'production mandate pipeline requires production GCP network posture collector' }
+  if (!isProductionRestrictedGoogleApiTransport(restricted_transport)) return { ready: false, code: 'PRODUCTION_TRANSPORT_REQUIRED', reason: 'production mandate pipeline rejects test or untrusted restricted transports' }
+  if (!isProductionGcsWormEvidenceStore(worm_store)) return { ready: false, code: 'PRODUCTION_WORM_STORE_REQUIRED', reason: 'production mandate pipeline requires production GCS Bucket Lock evidence store' }
+  for (const [label, signer] of [['DLP', dlp_signer], ['egress', egress_signer], ['evidence', evidence_signer]]) {
+    if (!isProductionGoogleCloudHsmSigner(signer)) return { ready: false, code: 'PRODUCTION_HSM_SIGNER_REQUIRED', reason: `${label} signer must be a production Google Cloud HSM signer` }
+  }
+  return { ready: true }
+}
+
 export async function runGcpMandateShadowPipeline({
   identity_assertion, matter_authorization, request, provider_passport, key_store, runtime_state,
   dlp_scanner, dlp_signer, network_collector, egress_signer, restricted_transport, provider_token_provider,
   evidence_signer, worm_store, release, bundle_id, now = new Date(), clock = () => new Date(),
 }) {
   if (runtime_state?.production !== true) return notReady('PRODUCTION_STATE_REQUIRED', 'production runtime state required')
+  const adapters = productionAdaptersReady({ key_store, dlp_scanner, dlp_signer, network_collector, egress_signer, restricted_transport, evidence_signer, worm_store })
+  if (!adapters.ready) return notReady(adapters.code, adapters.reason)
   if (!request?.tenant_id || !request?.matter_id || !request?.policy_version || !release || !bundle_id) return notReady('CONTEXT_REQUIRED', 'complete mandate pipeline context required')
   if (runtime_state.release !== release) return notReady('RELEASE_MISMATCH', 'pipeline release must equal active runtime release')
   if (!runtime_state.dlp_config_fingerprint) return notReady('DLP_CONFIG_REQUIRED', 'active runtime DLP configuration fingerprint required')
