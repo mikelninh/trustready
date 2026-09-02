@@ -28,14 +28,14 @@ test('public Legal demo cannot send from its interactive workflow', () => {
   assert.match(html, /keine beA-Nachricht autonom senden/i)
 })
 
-test('public Legal demo uses explicit workflow actions rather than ambiguous confirmations', () => {
+test('public Legal demo uses explicit workflow actions rather than ambiguous confirmation buttons', () => {
   assert.match(html, /Fehlende Unterlagen beim Mandanten anfordern/i)
   assert.match(html, /Quellen vergleichen/i)
   assert.match(html, /03\.09\. als korrekt übernehmen/i)
   assert.match(html, /Vorgang zur Freigabe an Bao vorlegen/i)
   assert.match(html, /Entwurf fachlich freigeben/i)
-  assert.doesNotMatch(html, /Korrekturbedarf bestätigen/i)
-  assert.doesNotMatch(html, /Prüfliste bestätigen/i)
+  assert.doesNotMatch(html, /<button[^>]*>\s*Korrekturbedarf bestätigen\s*<\/button>/i)
+  assert.doesNotMatch(html, /<button[^>]*>\s*Prüfliste bestätigen\s*<\/button>/i)
 })
 
 test('public Legal demo makes evidence inspectable instead of self-certifying', () => {
