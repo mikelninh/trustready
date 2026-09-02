@@ -1,6 +1,8 @@
 const METADATA_BASE = 'http://169.254.169.254/computeMetadata/v1'
 const RUNTIME_IDENTITY_BRAND = Symbol('trustready.gce-runtime-identity-provider')
 const TEST_RUNTIME_IDENTITY_BRAND = Symbol('trustready.test-gce-runtime-identity-provider')
+const PRODUCTION_RUNTIME_IDENTITIES = new WeakSet()
+const TEST_RUNTIME_IDENTITIES = new WeakSet()
 const NATIVE_FETCH = typeof globalThis.fetch === 'function' ? globalThis.fetch.bind(globalThis) : null
 
 function tail(value) {
@@ -31,7 +33,7 @@ async function metadataText(fetch_impl, path) {
 
 function buildProvider({ fetch_impl, test_only }) {
   if (typeof fetch_impl !== 'function') throw new TypeError('GCE metadata fetch implementation required')
-  return Object.freeze({
+  const provider = {
     [RUNTIME_IDENTITY_BRAND]: true,
     ...(test_only ? { [TEST_RUNTIME_IDENTITY_BRAND]: true } : {}),
     backend: 'gce-local-metadata',
@@ -70,19 +72,23 @@ function buildProvider({ fetch_impl, test_only }) {
         metadata_flavor_verified: true,
       }
     },
-  })
+  }
+  Object.freeze(provider)
+  if (test_only) TEST_RUNTIME_IDENTITIES.add(provider)
+  else PRODUCTION_RUNTIME_IDENTITIES.add(provider)
+  return provider
 }
 
 export function isTrustedGceRuntimeIdentityProvider(provider) {
-  return provider?.[RUNTIME_IDENTITY_BRAND] === true && typeof provider.collect === 'function'
+  return PRODUCTION_RUNTIME_IDENTITIES.has(provider) || TEST_RUNTIME_IDENTITIES.has(provider)
 }
 
 export function isProductionGceRuntimeIdentityProvider(provider) {
-  return isTrustedGceRuntimeIdentityProvider(provider) && provider?.[TEST_RUNTIME_IDENTITY_BRAND] !== true
+  return PRODUCTION_RUNTIME_IDENTITIES.has(provider)
 }
 
 export function isTestGceRuntimeIdentityProvider(provider) {
-  return isTrustedGceRuntimeIdentityProvider(provider) && provider?.[TEST_RUNTIME_IDENTITY_BRAND] === true
+  return TEST_RUNTIME_IDENTITIES.has(provider)
 }
 
 export function createGceRuntimeIdentityProvider() {
