@@ -11,6 +11,53 @@ import { buildVertexProposalRequest, parseVertexProposalResponse } from './legal
 function notReady(code, reason, extra = {}) { return { status: 'NOT_READY', code, reason, ...extra } }
 function cryptoKeyIdentity(keyVersionName) { return typeof keyVersionName === 'string' && keyVersionName.includes('/cryptoKeyVersions/') ? keyVersionName.split('/cryptoKeyVersions/')[0] : null }
 
+function normalizeStrictJson(value, state = { seen: new WeakSet(), nodes: 0 }, depth = 0, path = '$') {
+  if (depth > 32) throw new TypeError(`${path}: JSON nesting too deep`)
+  state.nodes += 1
+  if (state.nodes > 10000) throw new TypeError(`${path}: JSON node limit exceeded`)
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return value
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) throw new TypeError(`${path}: non-finite number denied`)
+    return value
+  }
+  if (typeof value !== 'object') throw new TypeError(`${path}: non-JSON value denied`)
+  if (state.seen.has(value)) throw new TypeError(`${path}: cyclic value denied`)
+  state.seen.add(value)
+  try {
+    if (Array.isArray(value)) {
+      if (Object.getPrototypeOf(value) !== Array.prototype) throw new TypeError(`${path}: custom array prototype denied`)
+      if (Object.getOwnPropertySymbols(value).length) throw new TypeError(`${path}: symbol properties denied`)
+      const descriptors = Object.getOwnPropertyDescriptors(value)
+      const out = []
+      for (const name of Object.keys(descriptors)) {
+        if (name === 'length') continue
+        if (!/^(0|[1-9]\d*)$/.test(name)) throw new TypeError(`${path}: non-index array property denied`)
+        const index = Number(name)
+        if (!Number.isSafeInteger(index) || index < 0 || index >= value.length) throw new TypeError(`${path}: invalid array index denied`)
+      }
+      for (let index = 0; index < value.length; index += 1) {
+        const descriptor = descriptors[String(index)]
+        if (!descriptor || !descriptor.enumerable || !Object.hasOwn(descriptor, 'value')) throw new TypeError(`${path}[${index}]: sparse/accessor array entry denied`)
+        out[index] = normalizeStrictJson(descriptor.value, state, depth + 1, `${path}[${index}]`)
+      }
+      return Object.freeze(out)
+    }
+    const prototype = Object.getPrototypeOf(value)
+    if (prototype !== Object.prototype && prototype !== null) throw new TypeError(`${path}: custom object prototype denied`)
+    if (Object.getOwnPropertySymbols(value).length) throw new TypeError(`${path}: symbol properties denied`)
+    const descriptors = Object.getOwnPropertyDescriptors(value)
+    const out = Object.create(null)
+    for (const key of Object.keys(descriptors).sort()) {
+      const descriptor = descriptors[key]
+      if (!descriptor.enumerable || !Object.hasOwn(descriptor, 'value')) throw new TypeError(`${path}.${key}: accessor/non-enumerable property denied`)
+      Object.defineProperty(out, key, { value: normalizeStrictJson(descriptor.value, state, depth + 1, `${path}.${key}`), enumerable: true, writable: false, configurable: false })
+    }
+    return Object.freeze(out)
+  } finally {
+    state.seen.delete(value)
+  }
+}
+
 async function hsmPosture(signer, label) {
   if (!isProductionGoogleCloudHsmSigner(signer)) throw new Error(`${label} must be a production Google Cloud HSM signer`)
   const posture = await signer.posture()
@@ -45,13 +92,16 @@ export async function runGcpMandateShadowPipeline({
   if (runtime_state?.production !== true) return notReady('PRODUCTION_STATE_REQUIRED', 'production runtime state required')
   const adapters = productionAdaptersReady({ key_store, dlp_scanner, dlp_signer, network_collector, egress_signer, restricted_transport, evidence_signer, worm_store })
   if (!adapters.ready) return notReady(adapters.code, adapters.reason)
-  if (!request?.tenant_id || !request?.matter_id || !request?.policy_version || !release || !bundle_id) return notReady('CONTEXT_REQUIRED', 'complete mandate pipeline context required')
+
+  let pipelineRequest
+  try { pipelineRequest = normalizeStrictJson(request) } catch (error) { return notReady('PAYLOAD_SERIALIZATION_DENIED', error.message) }
+  if (!pipelineRequest?.tenant_id || !pipelineRequest?.matter_id || !pipelineRequest?.policy_version || !release || !bundle_id) return notReady('CONTEXT_REQUIRED', 'complete mandate pipeline context required')
   if (runtime_state.release !== release) return notReady('RELEASE_MISMATCH', 'pipeline release must equal active runtime release')
   if (!runtime_state.dlp_config_fingerprint) return notReady('DLP_CONFIG_REQUIRED', 'active runtime DLP configuration fingerprint required')
-  const useCase = provider_passport?.body?.use_cases?.[request.use_case]
+  const useCase = provider_passport?.body?.use_cases?.[pipelineRequest.use_case]
   if (useCase?.network_profile !== 'gcp-restricted-googleapis') return notReady('GCP_RESTRICTED_PROFILE_REQUIRED', 'provider use case must require restricted Google APIs')
-  const exactUrls = useCase?.request_urls?.[request.region]
-  if (!Array.isArray(exactUrls) || !exactUrls.includes(request.endpoint)) return notReady('SIGNED_TARGET_URL_REQUIRED', 'exact provider request URL must be approved in signed use-case policy')
+  const exactUrls = useCase?.request_urls?.[pipelineRequest.region]
+  if (!Array.isArray(exactUrls) || !exactUrls.includes(pipelineRequest.endpoint)) return notReady('SIGNED_TARGET_URL_REQUIRED', 'exact provider request URL must be approved in signed use-case policy')
 
   let postures
   try {
@@ -65,24 +115,24 @@ export async function runGcpMandateShadowPipeline({
   const cryptoKeys = Object.values(postures).map((posture) => cryptoKeyIdentity(posture.key_version_name))
   if (new Set(hsmKeys).size !== 4 || new Set(cryptoKeys).size !== 4) return notReady('HSM_KEY_REUSE_DENIED', 'DLP, egress, network and evidence must use four separate HSM CryptoKeys')
 
-  const dlp = await createSignedDlpAttestation({ scanner: dlp_scanner, signer: dlp_signer, tenant_id: request.tenant_id, matter_id: request.matter_id, payload: request.payload, policy_version: request.policy_version, now })
+  const dlp = await createSignedDlpAttestation({ scanner: dlp_scanner, signer: dlp_signer, tenant_id: pipelineRequest.tenant_id, matter_id: pipelineRequest.matter_id, payload: pipelineRequest.payload, policy_version: pipelineRequest.policy_version, now })
   if (!dlp.safe || !dlp.attestation) return notReady('DLP_DENIED', dlp.scan?.reason || 'payload did not pass independent DLP', { scan: dlp.scan })
   if (dlp.scan?.scanner_config_fingerprint !== runtime_state.dlp_config_fingerprint) return notReady('DLP_CONFIG_MISMATCH', 'runtime scanner configuration differs from pinned deployment policy')
   if (!signatureIsHsm(dlp.attestation, postures.dlp.key_version_name)) return notReady('DLP_HSM_PROOF_INVALID', 'DLP attestation was not signed by expected HSM key')
 
-  const enforcement = await createSignedEgressEnforcementAttestation({ collector: network_collector, signer: egress_signer, tenant_id: request.tenant_id, policy_version: request.policy_version, release, now })
+  const enforcement = await createSignedEgressEnforcementAttestation({ collector: network_collector, signer: egress_signer, tenant_id: pipelineRequest.tenant_id, policy_version: pipelineRequest.policy_version, release, now })
   if (!enforcement.ready || !enforcement.attestation) return notReady('NETWORK_ENFORCEMENT_DENIED', enforcement.posture?.reason || 'network perimeter did not qualify')
   if (!signatureIsHsm(enforcement.attestation, postures.egress.key_version_name)) return notReady('EGRESS_HSM_PROOF_INVALID', 'egress posture was not signed by expected HSM key')
 
   let vertex
-  try { vertex = buildVertexProposalRequest({ payload: request.payload, use_case: request.use_case }) } catch (error) { return notReady('MODEL_REQUEST_DENIED', error.message) }
-  const prepared = await prepareRestrictedGoogleApiRequest({ transport: restricted_transport, endpoint: request.endpoint, body: vertex.bytes, region: request.region, now })
+  try { vertex = buildVertexProposalRequest({ payload: pipelineRequest.payload, use_case: pipelineRequest.use_case }) } catch (error) { return notReady('MODEL_REQUEST_DENIED', error.message) }
+  const prepared = await prepareRestrictedGoogleApiRequest({ transport: restricted_transport, endpoint: pipelineRequest.endpoint, body: vertex.bytes, region: pipelineRequest.region, now })
   if (!prepared.ready || !prepared.network_attestation) return notReady('RUNTIME_NETWORK_DENIED', prepared.reason || 'connection-bound restricted TLS preparation failed')
   if (prepared.body_fingerprint !== vertex.request_fingerprint) { cancelPreparedGoogleApiRequest(prepared.prepared); return notReady('TRANSPORT_BODY_FINGERPRINT_MISMATCH', 'prepared socket is not bound to exact proposal request body') }
-  if (prepared.network_attestation.body?.target_url !== request.endpoint || prepared.network_attestation.body?.request_fingerprint !== prepared.request_fingerprint) { cancelPreparedGoogleApiRequest(prepared.prepared); return notReady('TRANSPORT_TARGET_BINDING_FAILED', 'network attestation is not bound to exact approved target URL') }
+  if (prepared.network_attestation.body?.target_url !== pipelineRequest.endpoint || prepared.network_attestation.body?.request_fingerprint !== prepared.request_fingerprint) { cancelPreparedGoogleApiRequest(prepared.prepared); return notReady('TRANSPORT_TARGET_BINDING_FAILED', 'network attestation is not bound to exact approved target URL') }
   if (!signatureIsHsm(prepared.network_attestation, postures.network.key_version_name)) { cancelPreparedGoogleApiRequest(prepared.prepared); return notReady('NETWORK_HSM_PROOF_INVALID', 'network attestation was not signed by qualified network HSM key') }
 
-  const boundRequest = { ...request, transport_request_fingerprint: prepared.request_fingerprint }
+  const boundRequest = Object.freeze({ ...pipelineRequest, transport_request_fingerprint: prepared.request_fingerprint })
   const initialDecision = authorizeLegalEgress({ identity_assertion, matter_authorization, dlp_attestation: dlp.attestation, request: boundRequest, provider_passport, key_store, runtime_state, network_probe: () => prepared.network_attestation, egress_enforcement_attestation: enforcement.attestation, now })
   if (!initialDecision.allowed) { cancelPreparedGoogleApiRequest(prepared.prepared); return notReady('LEGAL_EGRESS_DENIED', initialDecision.reason, { decision: initialDecision }) }
 
@@ -112,9 +162,9 @@ export async function runGcpMandateShadowPipeline({
     'egress-enforcement.json': enforcement.attestation,
     'network-attestation.json': prepared.network_attestation,
     'proposal-proof.json': { proposal_type: proposal.proposal.type, proposal_hash: proposal.proposal_hash, provider_response_fingerprint: providerResponse.response_fingerprint, transport_request_fingerprint: prepared.request_fingerprint, source_ref_count: Array.isArray(proposal.proposal.source_refs) ? proposal.proposal.source_refs.length : 0 },
-    'runtime-summary.json': { tenant_id: request.tenant_id, matter_id_hash: `sha256:${sha256(request.matter_id)}`, provider_id: request.provider_id, use_case: request.use_case, policy_version: request.policy_version, release, decision_id: finalDecision.decision_id, recorded_at: now.toISOString() },
+    'runtime-summary.json': { tenant_id: pipelineRequest.tenant_id, matter_id_hash: `sha256:${sha256(pipelineRequest.matter_id)}`, provider_id: pipelineRequest.provider_id, use_case: pipelineRequest.use_case, policy_version: pipelineRequest.policy_version, release, decision_id: finalDecision.decision_id, recorded_at: now.toISOString() },
   }
-  const manifest = buildEvidenceManifest({ tenant: request.tenant_id, release, policy_version: request.policy_version, artifacts, generated_at: now.toISOString() })
+  const manifest = buildEvidenceManifest({ tenant: pipelineRequest.tenant_id, release, policy_version: pipelineRequest.policy_version, artifacts, generated_at: now.toISOString() })
   let signedManifest
   try { signedManifest = await signEnvelopeWithSigner({ body: manifest, signer: evidence_signer, purpose: 'evidence_manifest' }) } catch (error) { return notReady('EVIDENCE_SIGNING_FAILED', error.message) }
   if (!signatureIsHsm(signedManifest, postures.evidence.key_version_name)) return notReady('EVIDENCE_HSM_PROOF_INVALID', 'evidence manifest was not signed by expected HSM key')
