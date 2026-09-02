@@ -15,6 +15,8 @@ const DIRECTIONS = new Set(['INGRESS', 'EGRESS'])
 const POLICY_ACTIONS = new Set(['allow', 'deny', 'goto_next', 'apply_security_profile_group'])
 const NETWORK_COLLECTOR_BRAND = Symbol('trustready.gcp-network-posture-collector')
 const TEST_NETWORK_COLLECTOR_BRAND = Symbol('trustready.test-gcp-network-posture-collector')
+const PRODUCTION_NETWORK_COLLECTORS = new WeakSet()
+const TEST_NETWORK_COLLECTORS = new WeakSet()
 const NATIVE_FETCH = typeof globalThis.fetch === 'function' ? globalThis.fetch.bind(globalThis) : null
 
 async function authToken(provider) {
@@ -252,7 +254,7 @@ function buildNetworkCollector({ project_id, region, subnetwork, service_perimet
   const compute = 'https://compute.googleapis.com/compute/v1'
   const access = 'https://accesscontextmanager.googleapis.com/v1'
   const crm = 'https://cloudresourcemanager.googleapis.com/v3'
-  return Object.freeze({
+  const collector = {
     [NETWORK_COLLECTOR_BRAND]: true,
     ...(test_only ? { [TEST_NETWORK_COLLECTOR_BRAND]: true } : {}),
     backend: 'gcp-network-posture',
@@ -290,16 +292,15 @@ function buildNetworkCollector({ project_id, region, subnetwork, service_perimet
         expected_nic: workload_nic,
       })
     },
-  })
+  }
+  Object.freeze(collector)
+  if (test_only) TEST_NETWORK_COLLECTORS.add(collector)
+  else PRODUCTION_NETWORK_COLLECTORS.add(collector)
+  return collector
 }
 
-export function isProductionGcpNetworkPostureCollector(collector) {
-  return collector?.[NETWORK_COLLECTOR_BRAND] === true && collector?.[TEST_NETWORK_COLLECTOR_BRAND] !== true && typeof collector.collect === 'function'
-}
-
-export function isTestGcpNetworkPostureCollector(collector) {
-  return collector?.[NETWORK_COLLECTOR_BRAND] === true && collector?.[TEST_NETWORK_COLLECTOR_BRAND] === true && typeof collector.collect === 'function'
-}
+export function isProductionGcpNetworkPostureCollector(collector) { return PRODUCTION_NETWORK_COLLECTORS.has(collector) }
+export function isTestGcpNetworkPostureCollector(collector) { return TEST_NETWORK_COLLECTORS.has(collector) }
 
 export function createGcpNetworkPostureCollector({ project_id, region, subnetwork, service_perimeter_name, workload_nic = 'nic0', token_provider }) {
   if (typeof NATIVE_FETCH !== 'function') throw new TypeError('native fetch required for production GCP network collector')
