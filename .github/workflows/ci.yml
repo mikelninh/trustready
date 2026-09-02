@@ -19,6 +19,10 @@ jobs:
         run: npm run benchmark:scanner
       - name: Run reproducible legal pre-audit
         run: npm run audit:legal
+      - name: Validate three-role audit request pack
+        run: |
+          npm run audit:request-pack -- bao-legal-shadow > /tmp/legal-audit-request-pack.json
+          node -e "const fs=require('fs'); const raw=fs.readFileSync('/tmp/legal-audit-request-pack.json','utf8'); const i=raw.indexOf('{'); const p=JSON.parse(raw.slice(i)); if(p.schema!=='trustready-legal-audit-request-pack-v1'||!p.roles?.runtime_security||!p.roles?.legal_privacy||!p.roles?.independent_auditor||p.separation_rules.length<5) process.exit(1); console.log(p.schema,Object.keys(p.roles).length)"
       - name: Validate collector, billing, API, MCP, WebMCP, UI and dogfood entrypoints
         run: |
           node --check collectors/github-public.mjs
@@ -38,5 +42,6 @@ jobs:
           node --check app.js
           node --check scripts/dogfood.mjs
           node --check scripts/legal-preaudit.mjs
+          node --check scripts/legal-audit-request-pack.mjs
       - name: Validate versioned procurement profile
         run: node -e "const p=require('./profiles/core-ai-procurement-2026.08.json'); if(!p.id||!p.version||p.controls.length<20) process.exit(1); console.log(p.id,p.version,p.controls.length)"
