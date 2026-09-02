@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import crypto from 'node:crypto'
 import { createRootedKeyTrustStore, publicKeyFingerprint, signKeyring } from './legal-key-identity.mjs'
 import { createGoogleCloudHsmSigner, createGoogleCloudHsmSignerForTest } from './legal-gcp-hsm.mjs'
-import { createGoogleSensitiveDataScanner, createGoogleSensitiveDataScannerForTest, legalDlpConfigFingerprint } from './legal-gcp-dlp.mjs'
+import { createGoogleSensitiveDataScanner, createGoogleSensitiveDataScannerForTest, productionLegalDlpConfigFingerprint } from './legal-gcp-dlp.mjs'
 import { createGcpNetworkPostureCollector, createGcpNetworkPostureCollectorForTest } from './legal-gcp-network-enforcement.mjs'
 import { createGceRuntimeIdentityProviderForTest } from './legal-gcp-runtime-identity.mjs'
 import { createRestrictedGoogleApiTransport, createRestrictedGoogleApiTransportForTest } from './legal-gcp-bound-transport.mjs'
@@ -14,7 +14,7 @@ const NOW = new Date('2026-09-02T12:00:00Z')
 const token = async () => 'synthetic-access-token-long-enough'
 const root = crypto.generateKeyPairSync('ed25519')
 const leaf = crypto.generateKeyPairSync('ed25519')
-const signedKeyring = signKeyring({ keys: [{ key_id: 'leaf', purpose: 'identity', public_key: leaf.publicKey }], version: 'v8', valid_until: '2026-12-31T00:00:00Z', private_key: root.privateKey, key_id: 'offline-root' })
+const signedKeyring = signKeyring({ keys: [{ key_id: 'leaf', purpose: 'identity', public_key: leaf.publicKey }], version: 'v11', valid_until: '2026-12-31T00:00:00Z', private_key: root.privateKey, key_id: 'offline-root' })
 function rootedStore() { return createRootedKeyTrustStore({ signed_keyring: signedKeyring, pinned_root_public_key: root.publicKey, expected_root_fingerprint: publicKeyFingerprint(root.publicKey), now: NOW }) }
 const keyIds = {
   dlp: 'projects/p/locations/europe-west3/keyRings/legal/cryptoKeys/dlp/cryptoKeyVersions/1',
@@ -40,9 +40,9 @@ function productionAdapters() {
 function base(overrides = {}) {
   return {
     ...productionAdapters(),
-    runtime_state: { production: true, external_ai_enabled: true, policy_version: 'legal-v8', release: 'r8', dlp_config_fingerprint: legalDlpConfigFingerprint(), disabled_tenants: [], disabled_providers: [] },
-    request: { tenant_id: 'tenant-a', matter_id: 'm1', policy_version: 'legal-v8' },
-    provider_passport: {}, release: 'r8', bundle_id: 'b1', now: NOW,
+    runtime_state: { production: true, external_ai_enabled: true, policy_version: 'legal-v11', release: 'r11', dlp_config_fingerprint: productionLegalDlpConfigFingerprint({ project_id: 'trustready-prod' }), disabled_tenants: [], disabled_providers: [] },
+    request: { tenant_id: 'tenant-a', matter_id: 'm1', policy_version: 'legal-v11' },
+    provider_passport: {}, release: 'r11', bundle_id: 'b1',
     ...overrides,
   }
 }
