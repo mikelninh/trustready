@@ -1,5 +1,5 @@
 import { signEnvelopeWithSigner } from './legal-key-identity.mjs'
-import { createGceRuntimeIdentityProvider, isTrustedGceRuntimeIdentityProvider } from './legal-gcp-runtime-identity.mjs'
+import { createGceRuntimeIdentityProvider, isProductionGceRuntimeIdentityProvider, isTrustedGceRuntimeIdentityProvider } from './legal-gcp-runtime-identity.mjs'
 
 const RESTRICTED_GOOGLE_VIP = '199.36.153.4/30'
 const APPROVED_RESTRICTED_SERVICES = Object.freeze([
@@ -13,11 +13,14 @@ const APPROVED_RESTRICTED_SERVICES = Object.freeze([
 ])
 const DIRECTIONS = new Set(['INGRESS', 'EGRESS'])
 const POLICY_ACTIONS = new Set(['allow', 'deny', 'goto_next', 'apply_security_profile_group'])
+const NETWORK_COLLECTOR_BRAND = Symbol('trustready.gcp-network-posture-collector')
+const TEST_NETWORK_COLLECTOR_BRAND = Symbol('trustready.test-gcp-network-posture-collector')
+const NATIVE_FETCH = typeof globalThis.fetch === 'function' ? globalThis.fetch.bind(globalThis) : null
 
 async function authToken(provider) {
   if (typeof provider !== 'function') throw new Error('GCP access token provider required')
   const token = await provider()
-  if (typeof token !== 'string' || token.length < 16) throw new Error('GCP access token unavailable')
+  if (typeof token !== 'string' || token.length < 16 || /[\r\n]/.test(token)) throw new Error('GCP access token unavailable')
   return token
 }
 
@@ -30,7 +33,10 @@ async function getJson({ fetch_impl, token_provider, url }) {
     throw new Error('GCP network posture API unavailable')
   }
   if (!response?.ok) throw new Error(`GCP network posture API denied (${Number(response?.status) || 0})`)
-  try { return await response.json() } catch { throw new Error('GCP network posture response invalid') }
+  let body
+  try { body = await response.json() } catch { throw new Error('GCP network posture response invalid') }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error('GCP network posture response invalid')
+  return body
 }
 
 function tail(value) {
@@ -41,10 +47,10 @@ function tail(value) {
 function stringArray(value) { return Array.isArray(value) && value.every((entry) => typeof entry === 'string' && entry.length > 0) }
 function optionalStringArray(object, key) { return !Object.hasOwn(object, key) || stringArray(object[key]) }
 function validLayer4Entries(entries) {
-  return Array.isArray(entries) && entries.length > 0 && entries.every((entry) => entry && typeof entry === 'object' && typeof entry.IPProtocol === 'string' && entry.IPProtocol.length > 0 && (!Object.hasOwn(entry, 'ports') || stringArray(entry.ports)))
+  return Array.isArray(entries) && entries.length > 0 && entries.every((entry) => entry && typeof entry === 'object' && !Array.isArray(entry) && typeof entry.IPProtocol === 'string' && entry.IPProtocol.length > 0 && (!Object.hasOwn(entry, 'ports') || stringArray(entry.ports)))
 }
 function validPolicyLayer4(entries) {
-  return Array.isArray(entries) && entries.every((entry) => entry && typeof entry === 'object' && typeof entry.ipProtocol === 'string' && entry.ipProtocol.length > 0 && (!Object.hasOwn(entry, 'ports') || stringArray(entry.ports)))
+  return Array.isArray(entries) && entries.length > 0 && entries.every((entry) => entry && typeof entry === 'object' && !Array.isArray(entry) && typeof entry.ipProtocol === 'string' && entry.ipProtocol.length > 0 && (!Object.hasOwn(entry, 'ports') || stringArray(entry.ports)))
 }
 
 function validClassicRule(rule) {
@@ -54,6 +60,7 @@ function validClassicRule(rule) {
   if (Object.hasOwn(rule, 'disabled') && typeof rule.disabled !== 'boolean') return false
   if (!optionalStringArray(rule, 'destinationRanges') || !optionalStringArray(rule, 'sourceRanges') || !optionalStringArray(rule, 'targetTags') || !optionalStringArray(rule, 'targetServiceAccounts')) return false
   if (rule.direction === 'EGRESS' && (!Array.isArray(rule.destinationRanges) || rule.destinationRanges.length === 0)) return false
+  if (rule.direction === 'INGRESS' && Object.hasOwn(rule, 'sourceRanges') && rule.sourceRanges.length === 0) return false
   const hasAllowed = Object.hasOwn(rule, 'allowed')
   const hasDenied = Object.hasOwn(rule, 'denied')
   if (hasAllowed === hasDenied) return false
@@ -73,11 +80,11 @@ function validPolicyRule(rule) {
   if (typeof rule.action !== 'string' || !POLICY_ACTIONS.has(rule.action.toLowerCase())) return false
   if (Object.hasOwn(rule, 'disabled') && typeof rule.disabled !== 'boolean') return false
   if (!optionalStringArray(rule, 'targetResources') || !optionalStringArray(rule, 'targetServiceAccounts')) return false
-  if (Object.hasOwn(rule, 'match')) {
-    if (!rule.match || typeof rule.match !== 'object' || Array.isArray(rule.match)) return false
-    if (!optionalStringArray(rule.match, 'destIpRanges') || !optionalStringArray(rule.match, 'srcIpRanges')) return false
-    if (Object.hasOwn(rule.match, 'layer4Configs') && !validPolicyLayer4(rule.match.layer4Configs)) return false
-  }
+  if (!rule.match || typeof rule.match !== 'object' || Array.isArray(rule.match)) return false
+  if (!optionalStringArray(rule.match, 'destIpRanges') || !optionalStringArray(rule.match, 'srcIpRanges')) return false
+  if (rule.direction === 'EGRESS' && (!Array.isArray(rule.match.destIpRanges) || rule.match.destIpRanges.length === 0)) return false
+  if (rule.direction === 'INGRESS' && (!Array.isArray(rule.match.srcIpRanges) || rule.match.srcIpRanges.length === 0)) return false
+  if (Object.hasOwn(rule.match, 'layer4Configs') && !validPolicyLayer4(rule.match.layer4Configs)) return false
   return true
 }
 
@@ -237,13 +244,17 @@ export function evaluateGcpNetworkPosture({ effective_firewalls, regional_effect
   }
 }
 
-export function createGcpNetworkPostureCollector({ project_id, region, subnetwork, service_perimeter_name, workload_nic = 'nic0', fetch_impl = globalThis.fetch, token_provider, runtime_identity_provider = createGceRuntimeIdentityProvider() }) {
+function buildNetworkCollector({ project_id, region, subnetwork, service_perimeter_name, workload_nic, fetch_impl, token_provider, runtime_identity_provider, test_only }) {
   if (!project_id || !region || !subnetwork || !service_perimeter_name || !workload_nic) throw new TypeError('GCP network collector context required')
+  if (typeof fetch_impl !== 'function') throw new TypeError('GCP network collector fetch implementation required')
   if (!isTrustedGceRuntimeIdentityProvider(runtime_identity_provider)) throw new TypeError('trusted local GCE runtime identity provider required')
+  if (!test_only && !isProductionGceRuntimeIdentityProvider(runtime_identity_provider)) throw new TypeError('production collector requires production GCE runtime identity provider')
   const compute = 'https://compute.googleapis.com/compute/v1'
   const access = 'https://accesscontextmanager.googleapis.com/v1'
   const crm = 'https://cloudresourcemanager.googleapis.com/v3'
-  return {
+  return Object.freeze({
+    [NETWORK_COLLECTOR_BRAND]: true,
+    ...(test_only ? { [TEST_NETWORK_COLLECTOR_BRAND]: true } : {}),
     backend: 'gcp-network-posture',
     async collect() {
       const [subnet, perimeter, project, runtimeIdentity] = await Promise.all([
@@ -279,11 +290,29 @@ export function createGcpNetworkPostureCollector({ project_id, region, subnetwor
         expected_nic: workload_nic,
       })
     },
-  }
+  })
+}
+
+export function isProductionGcpNetworkPostureCollector(collector) {
+  return collector?.[NETWORK_COLLECTOR_BRAND] === true && collector?.[TEST_NETWORK_COLLECTOR_BRAND] !== true && typeof collector.collect === 'function'
+}
+
+export function isTestGcpNetworkPostureCollector(collector) {
+  return collector?.[NETWORK_COLLECTOR_BRAND] === true && collector?.[TEST_NETWORK_COLLECTOR_BRAND] === true && typeof collector.collect === 'function'
+}
+
+export function createGcpNetworkPostureCollector({ project_id, region, subnetwork, service_perimeter_name, workload_nic = 'nic0', token_provider }) {
+  if (typeof NATIVE_FETCH !== 'function') throw new TypeError('native fetch required for production GCP network collector')
+  return buildNetworkCollector({ project_id, region, subnetwork, service_perimeter_name, workload_nic, fetch_impl: NATIVE_FETCH, token_provider, runtime_identity_provider: createGceRuntimeIdentityProvider(), test_only: false })
+}
+
+export function createGcpNetworkPostureCollectorForTest({ project_id, region, subnetwork, service_perimeter_name, workload_nic = 'nic0', fetch_impl, token_provider, runtime_identity_provider }) {
+  return buildNetworkCollector({ project_id, region, subnetwork, service_perimeter_name, workload_nic, fetch_impl, token_provider, runtime_identity_provider, test_only: true })
 }
 
 export async function createSignedEgressEnforcementAttestation({ collector, signer, tenant_id, policy_version, release, now = new Date(), ttl_ms = 120_000 }) {
   if (!release || typeof release !== 'string') throw new TypeError('release identity required for egress enforcement')
+  if (!collector || typeof collector.collect !== 'function') throw new TypeError('network collector required')
   const posture = await collector.collect()
   if (!posture.ready) return { ready: false, posture, attestation: null }
   const body = {
