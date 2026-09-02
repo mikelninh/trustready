@@ -2,11 +2,14 @@ import crypto from 'node:crypto'
 import { canonicalize, publicKeyFingerprint } from './legal-key-identity.mjs'
 
 const KEY_PATH = /^projects\/[^/]+\/locations\/([^/]+)\/keyRings\/[^/]+\/cryptoKeys\/[^/]+\/cryptoKeyVersions\/[^/]+$/
+const HSM_SIGNER_BRAND = Symbol('trustready.gcp-hsm-signer')
+const TEST_HSM_SIGNER_BRAND = Symbol('trustready.test-gcp-hsm-signer')
+const NATIVE_FETCH = typeof globalThis.fetch === 'function' ? globalThis.fetch.bind(globalThis) : null
 
 async function accessToken(tokenProvider) {
   if (typeof tokenProvider !== 'function') throw new Error('GCP access token provider required')
   const token = await tokenProvider()
-  if (typeof token !== 'string' || token.length < 16) throw new Error('GCP access token unavailable')
+  if (typeof token !== 'string' || token.length < 16 || /[\r\n]/.test(token)) throw new Error('GCP access token unavailable')
   return token
 }
 
@@ -29,8 +32,9 @@ async function jsonRequest({ fetch_impl, token_provider, url, method = 'GET', bo
     throw new Error('GCP API request failed')
   }
   if (!response?.ok) throw new Error(`GCP API request denied (${Number(response?.status) || 0})`)
-  const data = await response.json()
-  if (!data || typeof data !== 'object') throw new Error('GCP API returned invalid JSON')
+  let data
+  try { data = await response.json() } catch { throw new Error('GCP API returned invalid JSON') }
+  if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('GCP API returned invalid JSON')
   return data
 }
 
@@ -61,8 +65,9 @@ export function evaluateCloudHsmKeyPosture({ metadata, public_key, key_version_n
   }
 }
 
-export function createGoogleCloudHsmSigner({ key_version_name, fetch_impl = globalThis.fetch, token_provider, allowed_locations = ['europe-west3', 'europe-west4', 'europe-west1'] }) {
+function buildGoogleCloudHsmSigner({ key_version_name, fetch_impl, token_provider, allowed_locations, test_only }) {
   if (!KEY_PATH.test(key_version_name || '')) throw new TypeError('valid Cloud KMS CryptoKeyVersion resource required')
+  if (typeof fetch_impl !== 'function') throw new TypeError('Cloud HSM fetch implementation required')
   const base = `https://cloudkms.googleapis.com/v1/${key_version_name}`
   let cachedPosture = null
 
@@ -77,7 +82,9 @@ export function createGoogleCloudHsmSigner({ key_version_name, fetch_impl = glob
     return posture
   }
 
-  return {
+  return Object.freeze({
+    [HSM_SIGNER_BRAND]: true,
+    ...(test_only ? { [TEST_HSM_SIGNER_BRAND]: true } : {}),
     backend: 'gcp-cloud-hsm',
     hardware_backed: true,
     async posture() { return inspect() },
@@ -101,5 +108,22 @@ export function createGoogleCloudHsmSigner({ key_version_name, fetch_impl = glob
         public_key_fingerprint: posture.public_key_fingerprint,
       }
     },
-  }
+  })
+}
+
+export function isProductionGoogleCloudHsmSigner(signer) {
+  return signer?.[HSM_SIGNER_BRAND] === true && signer?.[TEST_HSM_SIGNER_BRAND] !== true
+}
+
+export function isTestGoogleCloudHsmSigner(signer) {
+  return signer?.[HSM_SIGNER_BRAND] === true && signer?.[TEST_HSM_SIGNER_BRAND] === true
+}
+
+export function createGoogleCloudHsmSigner({ key_version_name, token_provider, allowed_locations = ['europe-west3', 'europe-west4', 'europe-west1'] }) {
+  if (typeof NATIVE_FETCH !== 'function') throw new TypeError('native fetch required for production Cloud HSM signer')
+  return buildGoogleCloudHsmSigner({ key_version_name, fetch_impl: NATIVE_FETCH, token_provider, allowed_locations, test_only: false })
+}
+
+export function createGoogleCloudHsmSignerForTest({ key_version_name, fetch_impl, token_provider, allowed_locations = ['europe-west3', 'europe-west4', 'europe-west1'] }) {
+  return buildGoogleCloudHsmSigner({ key_version_name, fetch_impl, token_provider, allowed_locations, test_only: true })
 }
