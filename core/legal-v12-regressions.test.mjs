@@ -87,5 +87,5 @@ test('mandate pipeline authenticates runtime network and WORM resource before ma
 
 test('IaC pins the evidence bucket into the dedicated gateway metadata', () => {
   const source = fs.readFileSync(new URL('../infra/gcp-legal-shadow/main.tf', import.meta.url), 'utf8')
-  assert.match(source, /trustready-evidence-bucket\s*=\s*var\.evidence_bucket_name/)
+  assert.match(source, /trustready-evidence-bucket\s*=\s*google_storage_bucket\.evidence\.name/)
 })
