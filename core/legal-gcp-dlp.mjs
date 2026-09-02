@@ -7,9 +7,20 @@ export const DEFAULT_LEGAL_INFOTYPES = Object.freeze([
   'MEDICAL_RECORD_NUMBER', 'IP_ADDRESS', 'OPENAI_API_KEY', 'GCP_API_KEY', 'ANTHROPIC_API_KEY',
 ])
 export const GCP_DLP_SCANNER_VERSION = 'google-sensitive-data-protection-v3'
+export const PRODUCTION_DLP_MIN_LIKELIHOOD = 'POSSIBLE'
+export const PRODUCTION_DLP_MAX_FINDINGS = 1000
 const DLP_SCANNER_BRAND = Symbol('trustready.gcp-dlp-scanner')
 const TEST_DLP_SCANNER_BRAND = Symbol('trustready.test-gcp-dlp-scanner')
+const PRODUCTION_DLP_SCANNERS = new WeakSet()
+const TEST_DLP_SCANNERS = new WeakSet()
 const NATIVE_FETCH = typeof globalThis.fetch === 'function' ? globalThis.fetch.bind(globalThis) : null
+
+function exactProductionInfoTypes(infoTypes) {
+  if (!Array.isArray(infoTypes) || infoTypes.length !== DEFAULT_LEGAL_INFOTYPES.length) return false
+  const actual = [...new Set(infoTypes)].sort()
+  const expected = [...DEFAULT_LEGAL_INFOTYPES].sort()
+  return actual.length === expected.length && actual.every((value, index) => value === expected[index])
+}
 
 export function legalDlpConfigFingerprint({ info_types = DEFAULT_LEGAL_INFOTYPES, min_likelihood = 'POSSIBLE', max_findings = 1000 } = {}) {
   if (!Array.isArray(info_types) || info_types.length === 0) throw new TypeError('DLP infoTypes required')
@@ -53,7 +64,7 @@ function buildScanner({ project_id, location, fetch_impl, token_provider, info_t
   const endpoint = `https://dlp.googleapis.com/v2/projects/${project_id}/locations/${location}/content:inspect`
   const scannerConfigFingerprint = legalDlpConfigFingerprint({ info_types, min_likelihood, max_findings })
 
-  return Object.freeze({
+  const scanner = {
     [DLP_SCANNER_BRAND]: true,
     ...(test_only ? { [TEST_DLP_SCANNER_BRAND]: true } : {}),
     backend: 'gcp-sensitive-data-protection', location, info_types: [...info_types], scanner_version: GCP_DLP_SCANNER_VERSION,
@@ -84,20 +95,27 @@ function buildScanner({ project_id, location, fetch_impl, token_provider, info_t
         scanner_config_fingerprint: scannerConfigFingerprint,
       }
     },
-  })
+  }
+  Object.freeze(scanner)
+  if (test_only) TEST_DLP_SCANNERS.add(scanner)
+  else PRODUCTION_DLP_SCANNERS.add(scanner)
+  return scanner
 }
 
 export function isProductionGoogleSensitiveDataScanner(scanner) {
-  return scanner?.[DLP_SCANNER_BRAND] === true && scanner?.[TEST_DLP_SCANNER_BRAND] !== true && typeof scanner.inspect === 'function'
+  return PRODUCTION_DLP_SCANNERS.has(scanner)
 }
 
 export function isTestGoogleSensitiveDataScanner(scanner) {
-  return scanner?.[DLP_SCANNER_BRAND] === true && scanner?.[TEST_DLP_SCANNER_BRAND] === true && typeof scanner.inspect === 'function'
+  return TEST_DLP_SCANNERS.has(scanner)
 }
 
-export function createGoogleSensitiveDataScanner({ project_id, location = 'eu', token_provider, info_types = DEFAULT_LEGAL_INFOTYPES, min_likelihood = 'POSSIBLE', max_payload_bytes = 256 * 1024, max_findings = 1000 }) {
+export function createGoogleSensitiveDataScanner({ project_id, location = 'eu', token_provider, info_types = DEFAULT_LEGAL_INFOTYPES, min_likelihood = PRODUCTION_DLP_MIN_LIKELIHOOD, max_payload_bytes = 256 * 1024, max_findings = PRODUCTION_DLP_MAX_FINDINGS }) {
   if (typeof NATIVE_FETCH !== 'function') throw new TypeError('native fetch required for production DLP scanner')
-  return buildScanner({ project_id, location, fetch_impl: NATIVE_FETCH, token_provider, info_types, min_likelihood, max_payload_bytes, max_findings, test_only: false })
+  if (!exactProductionInfoTypes(info_types) || min_likelihood !== PRODUCTION_DLP_MIN_LIKELIHOOD || max_findings !== PRODUCTION_DLP_MAX_FINDINGS) {
+    throw new TypeError('production DLP scanner must use the approved legal info-type set, likelihood and finding limit')
+  }
+  return buildScanner({ project_id, location, fetch_impl: NATIVE_FETCH, token_provider, info_types: DEFAULT_LEGAL_INFOTYPES, min_likelihood: PRODUCTION_DLP_MIN_LIKELIHOOD, max_payload_bytes, max_findings: PRODUCTION_DLP_MAX_FINDINGS, test_only: false })
 }
 
 export function createGoogleSensitiveDataScannerForTest({ project_id, location = 'eu', fetch_impl, token_provider, info_types = DEFAULT_LEGAL_INFOTYPES, min_likelihood = 'POSSIBLE', max_payload_bytes = 256 * 1024, max_findings = 1000 }) {
