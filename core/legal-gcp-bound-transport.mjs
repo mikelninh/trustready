@@ -11,8 +11,6 @@ const TEST_ONLY_TRANSPORT_BRAND = Symbol('trustready.test-only-restricted-google
 const PREPARED_BRAND = Symbol('trustready.prepared-restricted-request')
 const PREPARED_STATE = new WeakMap()
 
-// Capture Node implementations once at module initialization. Production construction never
-// accepts caller-supplied DNS/TLS/HTTPS implementations. Test injection is isolated below.
 const NATIVE_RESOLVE4 = dns.resolve4.bind(dns)
 const NATIVE_TLS_CONNECT = tls.connect.bind(tls)
 const NATIVE_HTTPS_REQUEST = https.request.bind(https)
@@ -49,6 +47,9 @@ function trustedTransport(transport) {
   if (transport?.[TRANSPORT_BRAND] !== true) return false
   if (transport?.[TEST_ONLY_TRANSPORT_BRAND] === true && !testRuntime()) return false
   return true
+}
+export function isProductionRestrictedGoogleApiTransport(transport) {
+  return transport?.[TRANSPORT_BRAND] === true && transport?.[TEST_ONLY_TRANSPORT_BRAND] !== true
 }
 
 function openTls({ address, hostname, tls_connect, timeout_ms }) {
@@ -175,9 +176,6 @@ export async function sendPreparedGoogleApiRequest({ transport, prepared, header
   if (!trustedTransport(transport) || !state || state.transport !== transport || state.used === true) return { ok: false, reason: 'prepared restricted request invalid or already consumed' }
   for (const [name, value] of Object.entries(headers)) if (!safeHeader(name, value)) { cancelPreparedGoogleApiRequest(prepared); return { ok: false, reason: 'unsafe outbound header denied' } }
 
-  // Critical send section: the final clock read and full authorization gate MUST be synchronous.
-  // There is deliberately no await, promise callback, timer, or other asynchronous boundary between
-  // this gate and construction/submission of the HTTP request on the already-attested socket.
   const finalNow = synchronousClock(clock)
   if (!finalNow) { cancelPreparedGoogleApiRequest(prepared); return { ok: false, reason: 'final send clock must be synchronous and valid' } }
   if (finalNow.getTime() >= state.expires_at_ms) { cancelPreparedGoogleApiRequest(prepared); return { ok: false, reason: 'prepared network attestation expired before send' } }
