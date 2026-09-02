@@ -19,10 +19,10 @@ jobs:
         run: npm run benchmark:scanner
       - name: Run reproducible legal pre-audit
         run: npm run audit:legal
-      - name: Validate three-role audit request pack
+      - name: Validate three-role audit request pack and external verdict boundary
         run: |
           npm run audit:request-pack -- bao-legal-shadow > /tmp/legal-audit-request-pack.json
-          node -e "const fs=require('fs'); const raw=fs.readFileSync('/tmp/legal-audit-request-pack.json','utf8'); const i=raw.indexOf('{'); const p=JSON.parse(raw.slice(i)); if(p.schema!=='trustready-legal-audit-request-pack-v1'||!p.roles?.runtime_security||!p.roles?.legal_privacy||!p.roles?.independent_auditor||p.separation_rules.length<5) process.exit(1); console.log(p.schema,Object.keys(p.roles).length)"
+          node -e "const fs=require('fs'); const raw=fs.readFileSync('/tmp/legal-audit-request-pack.json','utf8'); const i=raw.indexOf('{'); const p=JSON.parse(raw.slice(i)); const independent=p.roles?.independent_auditor; const claims=independent?.claims||[]; if(p.schema!=='trustready-legal-audit-request-pack-v2'||!p.roles?.runtime_security||!p.roles?.legal_privacy||!independent||p.separation_rules.length<7||!claims.some(c=>c.name==='organizational_independence'&&c.evidence_level==='E4')||independent.final_verdict?.required!==true||independent.final_verdict?.issued_outside_local_preaudit!==true) process.exit(1); console.log(p.schema,Object.keys(p.roles).length,claims.length,independent.final_verdict.required)"
       - name: Validate collector, billing, API, MCP, WebMCP, UI and dogfood entrypoints
         run: |
           node --check collectors/github-public.mjs
