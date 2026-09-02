@@ -96,6 +96,17 @@ test('mandate pipeline binds all four HSM key projects to authenticated runtime 
   assert.ok(parser >= 0 && loop > parser && check > loop && deny > check && network > deny && dlp > deny)
 })
 
+test('mandate pipeline commits immutable pre-send intent before provider credentials or send', () => {
+  const source = fs.readFileSync(new URL('./legal-gcp-runtime-pipeline.mjs', import.meta.url), 'utf8')
+  const decision = source.indexOf('const initialDecision = authorizeLegalEgress')
+  const intent = source.indexOf('const preSend = await commitPreSendIntentToWorm')
+  const deny = source.indexOf("return notReady('PRE_SEND_EVIDENCE_REQUIRED'")
+  const hsm = source.indexOf("return notReady('PRE_SEND_HSM_PROOF_INVALID'")
+  const tokenRead = source.indexOf('accessToken = await providerToken')
+  const send = source.indexOf('const providerResponse = await sendPreparedGoogleApiRequest')
+  assert.ok(decision >= 0 && intent > decision && deny > intent && hsm > intent && tokenRead > hsm && send > tokenRead)
+})
+
 test('IaC pins the evidence bucket into the dedicated gateway metadata', () => {
   const source = fs.readFileSync(new URL('../infra/gcp-legal-shadow/main.tf', import.meta.url), 'utf8')
   assert.match(source, /trustready-evidence-bucket\s*=\s*google_storage_bucket\.evidence\.name/)
