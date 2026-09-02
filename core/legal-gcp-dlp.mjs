@@ -7,6 +7,7 @@ export const DEFAULT_LEGAL_INFOTYPES = Object.freeze([
   'MEDICAL_RECORD_NUMBER', 'IP_ADDRESS', 'OPENAI_API_KEY', 'GCP_API_KEY', 'ANTHROPIC_API_KEY',
 ])
 export const GCP_DLP_SCANNER_VERSION = 'google-sensitive-data-protection-v3'
+export const PRODUCTION_DLP_LOCATION = 'eu'
 export const PRODUCTION_DLP_MIN_LIKELIHOOD = 'POSSIBLE'
 export const PRODUCTION_DLP_MAX_FINDINGS = 1000
 const DLP_SCANNER_BRAND = Symbol('trustready.gcp-dlp-scanner')
@@ -24,14 +25,7 @@ function exactProductionInfoTypes(infoTypes) {
 
 export function legalDlpConfigFingerprint({ info_types = DEFAULT_LEGAL_INFOTYPES, min_likelihood = 'POSSIBLE', max_findings = 1000 } = {}) {
   if (!Array.isArray(info_types) || info_types.length === 0) throw new TypeError('DLP infoTypes required')
-  const config = {
-    provider: 'google-sensitive-data-protection',
-    api_version: 'v2',
-    info_types: [...new Set(info_types)].sort(),
-    min_likelihood,
-    include_quote: false,
-    max_findings_per_request: max_findings,
-  }
+  const config = { provider: 'google-sensitive-data-protection', api_version: 'v2', info_types: [...new Set(info_types)].sort(), min_likelihood, include_quote: false, max_findings_per_request: max_findings }
   return `sha256:${sha256(config)}`
 }
 
@@ -43,14 +37,10 @@ async function token(tokenProvider) {
 }
 
 export function parseDlpInspectResponse(response) {
-  if (!response || typeof response !== 'object' || !response.result || !Array.isArray(response.result.findings)) {
-    return { valid: false, safe: false, findings_count: null, detected_categories: [], reason: 'DLP response schema invalid' }
-  }
+  if (!response || typeof response !== 'object' || !response.result || !Array.isArray(response.result.findings)) return { valid: false, safe: false, findings_count: null, detected_categories: [], reason: 'DLP response schema invalid' }
   const findings = response.result.findings
   const categories = [...new Set(findings.map((finding) => finding?.infoType?.name).filter(Boolean))].sort()
-  if (findings.some((finding) => !finding || typeof finding !== 'object' || !finding.infoType?.name)) {
-    return { valid: false, safe: false, findings_count: findings.length, detected_categories: categories, reason: 'DLP finding schema invalid' }
-  }
+  if (findings.some((finding) => !finding || typeof finding !== 'object' || !finding.infoType?.name)) return { valid: false, safe: false, findings_count: findings.length, detected_categories: categories, reason: 'DLP finding schema invalid' }
   return { valid: true, safe: findings.length === 0, findings_count: findings.length, detected_categories: categories }
 }
 
@@ -63,12 +53,10 @@ function buildScanner({ project_id, location, fetch_impl, token_provider, info_t
   if (!Number.isInteger(max_payload_bytes) || max_payload_bytes < 1 || max_payload_bytes > 1024 * 1024) throw new TypeError('bounded DLP payload limit required')
   const endpoint = `https://dlp.googleapis.com/v2/projects/${project_id}/locations/${location}/content:inspect`
   const scannerConfigFingerprint = legalDlpConfigFingerprint({ info_types, min_likelihood, max_findings })
-
   const scanner = {
     [DLP_SCANNER_BRAND]: true,
     ...(test_only ? { [TEST_DLP_SCANNER_BRAND]: true } : {}),
-    backend: 'gcp-sensitive-data-protection', location, info_types: [...info_types], scanner_version: GCP_DLP_SCANNER_VERSION,
-    scanner_config_fingerprint: scannerConfigFingerprint,
+    backend: 'gcp-sensitive-data-protection', project_id, location, info_types: [...info_types], scanner_version: GCP_DLP_SCANNER_VERSION, scanner_config_fingerprint: scannerConfigFingerprint,
     async inspect({ payload }) {
       let value
       try { value = canonicalize(payload) } catch { return { safe: false, reason: 'payload cannot be safely serialised', payload_fingerprint: null, scanner_config_fingerprint: scannerConfigFingerprint } }
@@ -78,44 +66,29 @@ function buildScanner({ project_id, location, fetch_impl, token_provider, info_t
       try { accessToken = await token(token_provider) } catch { return { safe: false, reason: 'DLP authentication unavailable', payload_fingerprint: `sha256:${sha256(value)}`, scanner_config_fingerprint: scannerConfigFingerprint } }
       let response
       try {
-        response = await fetch_impl(endpoint, {
-          method: 'POST', redirect: 'error',
-          headers: { authorization: `Bearer ${accessToken}`, 'content-type': 'application/json', accept: 'application/json' },
-          body: JSON.stringify({ inspectConfig: { infoTypes: info_types.map((name) => ({ name })), minLikelihood: min_likelihood, includeQuote: false, limits: { maxFindingsPerRequest: max_findings } }, item: { value } }),
-        })
+        response = await fetch_impl(endpoint, { method: 'POST', redirect: 'error', headers: { authorization: `Bearer ${accessToken}`, 'content-type': 'application/json', accept: 'application/json' }, body: JSON.stringify({ inspectConfig: { infoTypes: info_types.map((name) => ({ name })), minLikelihood: min_likelihood, includeQuote: false, limits: { maxFindingsPerRequest: max_findings } }, item: { value } }) })
       } catch { return { safe: false, reason: 'DLP service unavailable', payload_fingerprint: `sha256:${sha256(value)}`, scanner_config_fingerprint: scannerConfigFingerprint } }
       if (!response?.ok) return { safe: false, reason: `DLP request denied (${Number(response?.status) || 0})`, payload_fingerprint: `sha256:${sha256(value)}`, scanner_config_fingerprint: scannerConfigFingerprint }
       let body
       try { body = await response.json() } catch { return { safe: false, reason: 'DLP response was not valid JSON', payload_fingerprint: `sha256:${sha256(value)}`, scanner_config_fingerprint: scannerConfigFingerprint } }
       const parsed = parseDlpInspectResponse(body)
       if (!parsed.valid) return { ...parsed, payload_fingerprint: `sha256:${sha256(value)}`, payload_bytes: bytes, scanner_config_fingerprint: scannerConfigFingerprint }
-      return {
-        ...parsed, payload_fingerprint: `sha256:${sha256(value)}`, payload_bytes: bytes,
-        scanner_id: 'gcp-sensitive-data-protection', scanner_version: GCP_DLP_SCANNER_VERSION, scanner_location: location,
-        scanner_config_fingerprint: scannerConfigFingerprint,
-      }
+      return { ...parsed, payload_fingerprint: `sha256:${sha256(value)}`, payload_bytes: bytes, scanner_id: 'gcp-sensitive-data-protection', scanner_version: GCP_DLP_SCANNER_VERSION, scanner_project_id: project_id, scanner_location: location, scanner_config_fingerprint: scannerConfigFingerprint }
     },
   }
   Object.freeze(scanner)
-  if (test_only) TEST_DLP_SCANNERS.add(scanner)
-  else PRODUCTION_DLP_SCANNERS.add(scanner)
+  if (test_only) TEST_DLP_SCANNERS.add(scanner); else PRODUCTION_DLP_SCANNERS.add(scanner)
   return scanner
 }
 
-export function isProductionGoogleSensitiveDataScanner(scanner) {
-  return PRODUCTION_DLP_SCANNERS.has(scanner)
-}
+export function isProductionGoogleSensitiveDataScanner(scanner) { return PRODUCTION_DLP_SCANNERS.has(scanner) }
+export function isTestGoogleSensitiveDataScanner(scanner) { return TEST_DLP_SCANNERS.has(scanner) }
 
-export function isTestGoogleSensitiveDataScanner(scanner) {
-  return TEST_DLP_SCANNERS.has(scanner)
-}
-
-export function createGoogleSensitiveDataScanner({ project_id, location = 'eu', token_provider, info_types = DEFAULT_LEGAL_INFOTYPES, min_likelihood = PRODUCTION_DLP_MIN_LIKELIHOOD, max_payload_bytes = 256 * 1024, max_findings = PRODUCTION_DLP_MAX_FINDINGS }) {
+export function createGoogleSensitiveDataScanner({ project_id, location = PRODUCTION_DLP_LOCATION, token_provider, info_types = DEFAULT_LEGAL_INFOTYPES, min_likelihood = PRODUCTION_DLP_MIN_LIKELIHOOD, max_payload_bytes = 256 * 1024, max_findings = PRODUCTION_DLP_MAX_FINDINGS }) {
   if (typeof NATIVE_FETCH !== 'function') throw new TypeError('native fetch required for production DLP scanner')
-  if (!exactProductionInfoTypes(info_types) || min_likelihood !== PRODUCTION_DLP_MIN_LIKELIHOOD || max_findings !== PRODUCTION_DLP_MAX_FINDINGS) {
-    throw new TypeError('production DLP scanner must use the approved legal info-type set, likelihood and finding limit')
-  }
-  return buildScanner({ project_id, location, fetch_impl: NATIVE_FETCH, token_provider, info_types: DEFAULT_LEGAL_INFOTYPES, min_likelihood: PRODUCTION_DLP_MIN_LIKELIHOOD, max_payload_bytes, max_findings: PRODUCTION_DLP_MAX_FINDINGS, test_only: false })
+  if (location !== PRODUCTION_DLP_LOCATION) throw new TypeError('production DLP scanner must use the approved EU location')
+  if (!exactProductionInfoTypes(info_types) || min_likelihood !== PRODUCTION_DLP_MIN_LIKELIHOOD || max_findings !== PRODUCTION_DLP_MAX_FINDINGS) throw new TypeError('production DLP scanner must use the approved legal info-type set, likelihood and finding limit')
+  return buildScanner({ project_id, location: PRODUCTION_DLP_LOCATION, fetch_impl: NATIVE_FETCH, token_provider, info_types: DEFAULT_LEGAL_INFOTYPES, min_likelihood: PRODUCTION_DLP_MIN_LIKELIHOOD, max_payload_bytes, max_findings: PRODUCTION_DLP_MAX_FINDINGS, test_only: false })
 }
 
 export function createGoogleSensitiveDataScannerForTest({ project_id, location = 'eu', fetch_impl, token_provider, info_types = DEFAULT_LEGAL_INFOTYPES, min_likelihood = 'POSSIBLE', max_payload_bytes = 256 * 1024, max_findings = 1000 }) {
@@ -126,15 +99,8 @@ export async function createSignedDlpAttestation({ scanner, signer, tenant_id, m
   if (!scanner || !signer || !tenant_id || !matter_id || !policy_version) throw new TypeError('DLP attestation context required')
   const result = await scanner.inspect({ payload })
   if (!result.safe) return { safe: false, scan: result, attestation: null }
-  if (!result.scanner_id || !result.scanner_version || !result.scanner_config_fingerprint) return { safe: false, scan: { ...result, reason: 'DLP scanner identity/version/config missing' }, attestation: null }
-  const body = {
-    schema: 'trustready-dlp-attestation-v2', safe: true, tenant_id, matter_id,
-    payload_fingerprint: result.payload_fingerprint, policy_version,
-    detected_categories: result.detected_categories || [], findings_count: result.findings_count,
-    scanner_id: result.scanner_id, scanner_version: result.scanner_version, scanner_location: result.scanner_location,
-    scanner_config_fingerprint: result.scanner_config_fingerprint,
-    observed_at: now.toISOString(), expires_at: new Date(now.getTime() + ttl_ms).toISOString(),
-  }
+  if (!result.scanner_id || !result.scanner_version || !result.scanner_project_id || !result.scanner_config_fingerprint) return { safe: false, scan: { ...result, reason: 'DLP scanner identity/version/project/config missing' }, attestation: null }
+  const body = { schema: 'trustready-dlp-attestation-v2', safe: true, tenant_id, matter_id, payload_fingerprint: result.payload_fingerprint, policy_version, detected_categories: result.detected_categories || [], findings_count: result.findings_count, scanner_id: result.scanner_id, scanner_version: result.scanner_version, scanner_project_id: result.scanner_project_id, scanner_location: result.scanner_location, scanner_config_fingerprint: result.scanner_config_fingerprint, observed_at: now.toISOString(), expires_at: new Date(now.getTime() + ttl_ms).toISOString() }
   const attestation = await signEnvelopeWithSigner({ body, signer, purpose: 'dlp_attestation' })
   return { safe: true, scan: result, attestation }
 }
