@@ -85,8 +85,8 @@ export async function runGcpMandateShadowPipeline({
       return finalDecision.allowed ? true : { allowed: false, reason: `fresh legal egress denied: ${finalDecision.reason}` }
     },
   })
+  if (!finalDecision.allowed) return notReady('FRESH_LEGAL_EGRESS_DENIED', finalDecision.reason || 'fresh pre-send authorization denied', { decision: finalDecision })
   if (!providerResponse.ok) return notReady('PROVIDER_REQUEST_FAILED', providerResponse.reason || `provider status ${providerResponse.status || 0}`, { decision: finalDecision })
-  if (!finalDecision.allowed) return notReady('FRESH_LEGAL_EGRESS_DENIED', finalDecision.reason || 'fresh pre-send authorization denied')
   if (providerResponse.request_fingerprint !== prepared.request_fingerprint || providerResponse.body_fingerprint !== vertex.request_fingerprint) return notReady('TRANSPORT_BINDING_FAILED', 'provider request did not preserve the attested target/body binding')
   const proposal = parseVertexProposalResponse(providerResponse.body)
   if (!proposal.valid) return notReady('MODEL_PROPOSAL_DENIED', proposal.reason)
