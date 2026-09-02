@@ -8,6 +8,13 @@ It does **not** issue a magic compliance score or certification.
 
 > **Core principle:** TrustReady should still be useful if the buyer does not trust TrustReady.
 
+## Live Legal demo
+
+- **Law-firm demo:** https://mikelninh.github.io/trustready/legal/
+- **Bao share link:** https://mikelninh.github.io/trustready/bao/
+
+Both links are public **synthetic** demonstrations only. They do not authorise real mandate data or claim production readiness.
+
 ## Two things live in this repository
 
 ### TrustReady Core
@@ -46,15 +53,15 @@ prepare draft / proposal
 lawyer approves, edits or rejects
 ```
 
-The current browser demo uses synthetic data only. Email, beA, case writes and other irreversible actions remain disabled.
-
-Open locally at [`bao.html`](bao.html). A hosted deployment can expose it as `/legal` or `/bao` through `vercel.json`.
+The current browser demos use synthetic data only. Email, beA, case writes and other irreversible actions remain disabled.
 
 Pilot success is deliberately measurable: **5 real workdays, at least 20 real work items, target ≥30 minutes net time saved per day, zero unauthorised external actions, and the lawyer chooses to keep using it.**
 
 See:
 - [`docs/LEGAL_PRODUCT_GOAL.md`](docs/LEGAL_PRODUCT_GOAL.md)
 - [`docs/BAO_PILOT_RUNBOOK.md`](docs/BAO_PILOT_RUNBOOK.md)
+- [`docs/LEGAL_EXTERNAL_REVIEW_REQUEST.md`](docs/LEGAL_EXTERNAL_REVIEW_REQUEST.md)
+- [Golden Shadow Pilot tracker #17](https://github.com/mikelninh/trustready/issues/17)
 
 ## Scanner workflow
 
@@ -116,7 +123,7 @@ For sensitive AI workflows it adds a second invariant:
 
 ## Framework mappings
 
-The control model is designed to map to multiple frameworks without pretending to replace legal advice or formal certification, including:
+The control model is designed to map controls to multiple frameworks without pretending to replace legal advice or formal certification, including:
 
 - EU AI Act
 - GDPR / data-protection evidence
@@ -157,6 +164,7 @@ TrustReady is an **engineering assurance layer**, not a certification body, regu
 - [`docs/TRUST_MODEL.md`](docs/TRUST_MODEL.md)
 - [`docs/LEGAL_PRODUCT_GOAL.md`](docs/LEGAL_PRODUCT_GOAL.md)
 - [`docs/BAO_PILOT_RUNBOOK.md`](docs/BAO_PILOT_RUNBOOK.md)
+- [`docs/LEGAL_EXTERNAL_REVIEW_REQUEST.md`](docs/LEGAL_EXTERNAL_REVIEW_REQUEST.md)
 
 ---
 
