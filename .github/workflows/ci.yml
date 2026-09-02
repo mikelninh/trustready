@@ -19,6 +19,8 @@ jobs:
         run: npm run benchmark:scanner
       - name: Run reproducible legal pre-audit
         run: npm run audit:legal
+      - name: Prove Bao pilot defaults stay synthetic and fail-closed
+        run: npm run readiness:bao
       - name: Validate three-role audit request pack and external verdict boundary
         run: |
           npm run audit:request-pack -- bao-legal-shadow > /tmp/legal-audit-request-pack.json
@@ -43,5 +45,6 @@ jobs:
           node --check scripts/dogfood.mjs
           node --check scripts/legal-preaudit.mjs
           node --check scripts/legal-audit-request-pack.mjs
+          node --check scripts/legal-pilot-readiness.mjs
       - name: Validate versioned procurement profile
         run: node -e "const p=require('./profiles/core-ai-procurement-2026.08.json'); if(!p.id||!p.version||p.controls.length<20) process.exit(1); console.log(p.id,p.version,p.controls.length)"
