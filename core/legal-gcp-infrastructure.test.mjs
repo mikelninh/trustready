@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import crypto from 'node:crypto'
 import { canonicalize, createKeyTrustStore, signEnvelopeWithSigner, verifyEnvelope } from './legal-key-identity.mjs'
 import { createGoogleCloudHsmSigner, evaluateCloudHsmKeyPosture } from './legal-gcp-hsm.mjs'
-import { createGoogleSensitiveDataScanner, parseDlpInspectResponse } from './legal-gcp-dlp.mjs'
+import { createGoogleSensitiveDataScanner, legalDlpConfigFingerprint, parseDlpInspectResponse } from './legal-gcp-dlp.mjs'
 import { evaluateGcpNetworkPosture } from './legal-gcp-network-enforcement.mjs'
 import { createGcsWormEvidenceStore, evaluateBucketLockPosture } from './legal-gcp-worm.mjs'
 import { qualifyGcpLegalInfrastructure } from './legal-gcp-qualification.mjs'
@@ -13,6 +13,7 @@ const ec = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
 const publicPem = ec.publicKey.export({ type: 'spki', format: 'pem' }).toString()
 const hsmMetadata = { name: KEY_NAME, state: 'ENABLED', protectionLevel: 'HSM', algorithm: 'EC_SIGN_P256_SHA256', attestation: { format: 'CAVIUM_V2_COMPRESSED', content: Buffer.from('attestation').toString('base64') } }
 const hsmPublic = { algorithm: 'EC_SIGN_P256_SHA256', pem: publicPem }
+const DLP_CONFIG = legalDlpConfigFingerprint()
 
 function jsonResponse(body, status = 200) { return { ok: status >= 200 && status < 300, status, async json() { return structuredClone(body) } } }
 const token = async () => 'test-access-token-that-is-long-enough'
@@ -45,11 +46,11 @@ test('Cloud HSM signer performs metadata/public-key checks before asymmetric sig
   await assert.rejects(() => broken.posture(), /GCP API request failed/)
 })
 
-test('ECDSA HSM-style envelope verification checks the precomputed SHA-256 digest exactly once', async () => {
+test('ECDSA HSM-style envelope verification matches Cloud KMS SHA-256 semantics', async () => {
   const signer = {
     async sign({ body }) {
-      const digest = crypto.createHash('sha256').update(Buffer.from(canonicalize(body))).digest()
-      const signature = crypto.sign(null, digest, ec.privateKey).toString('base64')
+      const canonical = Buffer.from(canonicalize(body))
+      const signature = crypto.sign('sha256', canonical, ec.privateKey).toString('base64')
       return { algorithm: 'ECDSA_P256_SHA256', key_id: 'hsm-root', value: signature }
     },
   }
@@ -60,41 +61,54 @@ test('ECDSA HSM-style envelope verification checks the precomputed SHA-256 diges
   assert.equal(verifyEnvelope({ envelope, key_store: store, purpose: 'trust_root' }).valid, false)
 })
 
-test('Sensitive Data Protection scanner sends no quotes and fails closed on detected PII or outage', async () => {
+test('Sensitive Data Protection scanner pins config and fails closed on malformed response, PII or outage', async () => {
   let requestBody
   const safeFetch = async (_url, options) => { requestBody = JSON.parse(options.body); return jsonResponse({ result: { findings: [] } }) }
-  const scanner = createGoogleSensitiveDataScanner({ project_id: 'trustready-prod', location: 'eu', fetch_impl: safeFetch, token_provider: token, info_types: ['EMAIL_ADDRESS', 'IBAN_CODE'] })
+  const scanner = createGoogleSensitiveDataScanner({ project_id: 'trustready-prod', location: 'eu', fetch_impl: safeFetch, token_provider: token })
   const safe = await scanner.inspect({ payload: { body_excerpt: 'Pseudonymised excerpt' } })
   assert.equal(safe.safe, true)
+  assert.equal(safe.scanner_config_fingerprint, DLP_CONFIG)
   assert.equal(requestBody.inspectConfig.includeQuote, false)
+  assert.equal(parseDlpInspectResponse({}).safe, false)
+  assert.equal(parseDlpInspectResponse({}).valid, false)
   assert.deepEqual(parseDlpInspectResponse({ result: { findings: [{ infoType: { name: 'EMAIL_ADDRESS' } }, { infoType: { name: 'IBAN_CODE' } }] } }).detected_categories, ['EMAIL_ADDRESS', 'IBAN_CODE'])
-  const findingScanner = createGoogleSensitiveDataScanner({ project_id: 'trustready-prod', fetch_impl: async () => jsonResponse({ result: { findings: [{ infoType: { name: 'EMAIL_ADDRESS' } }] } }), token_provider: token, info_types: ['EMAIL_ADDRESS'] })
+  const malformed = createGoogleSensitiveDataScanner({ project_id: 'trustready-prod', fetch_impl: async () => jsonResponse({}), token_provider: token })
+  assert.equal((await malformed.inspect({ payload: { body_excerpt: 'safe' } })).safe, false)
+  const findingScanner = createGoogleSensitiveDataScanner({ project_id: 'trustready-prod', fetch_impl: async () => jsonResponse({ result: { findings: [{ infoType: { name: 'EMAIL_ADDRESS' } }] } }), token_provider: token })
   assert.equal((await findingScanner.inspect({ payload: { body_excerpt: 'person@example.com' } })).safe, false)
-  const offline = createGoogleSensitiveDataScanner({ project_id: 'trustready-prod', fetch_impl: async () => { throw new Error('offline') }, token_provider: token, info_types: ['EMAIL_ADDRESS'] })
+  const offline = createGoogleSensitiveDataScanner({ project_id: 'trustready-prod', fetch_impl: async () => { throw new Error('offline') }, token_provider: token })
   assert.equal((await offline.inspect({ payload: { body_excerpt: 'safe' } })).safe, false)
 })
 
+const NETWORK = 'https://www.googleapis.com/compute/v1/projects/trustready-prod/global/networks/legal'
+const SUBNET = 'https://www.googleapis.com/compute/v1/projects/trustready-prod/regions/europe-west3/subnetworks/legal'
 function goodNetwork() {
   return {
     firewalls: { items: [
-      { name: 'allow-restricted-googleapis', direction: 'EGRESS', priority: 1000, destinationRanges: ['199.36.153.4/30'], allowed: [{ IPProtocol: 'tcp', ports: ['443'] }] },
-      { name: 'deny-all-egress', direction: 'EGRESS', priority: 2000, destinationRanges: ['0.0.0.0/0'], denied: [{ IPProtocol: 'all' }] },
+      { name: 'allow-restricted-googleapis', network: NETWORK, direction: 'EGRESS', priority: 1000, destinationRanges: ['199.36.153.4/30'], allowed: [{ IPProtocol: 'tcp', ports: ['443'] }] },
+      { name: 'deny-all-egress', network: NETWORK, direction: 'EGRESS', priority: 2000, destinationRanges: ['0.0.0.0/0'], denied: [{ IPProtocol: 'all' }] },
     ] },
-    subnetwork: { privateIpGoogleAccess: true },
-    instances: { items: { 'zones/europe-west3-a': { instances: [{ networkInterfaces: [{ accessConfigs: [] }] }] } } },
-    perimeter: { name: 'accessPolicies/1/servicePerimeters/legal', status: { resources: ['projects/123'], restrictedServices: ['aiplatform.googleapis.com', 'storage.googleapis.com', 'dlp.googleapis.com', 'cloudkms.googleapis.com'] } },
+    subnetwork: { network: NETWORK, selfLink: SUBNET, privateIpGoogleAccess: true },
+    instances: { items: { 'zones/europe-west3-a': { instances: [{ name: 'bao-shadow', networkInterfaces: [{ network: NETWORK, subnetwork: SUBNET, accessConfigs: [] }] }] } } },
+    perimeter: { name: 'accessPolicies/1/servicePerimeters/legal', status: { resources: ['projects/123'], restrictedServices: ['aiplatform.googleapis.com', 'storage.googleapis.com', 'dlp.googleapis.com', 'cloudkms.googleapis.com'], vpcAccessibleServices: { enableRestriction: true, allowedServices: ['RESTRICTED-SERVICES'] } } },
     protected_resource: 'projects/123',
   }
 }
 
-test('network enforcement requires deny-all, only restricted VIP allow, no public IP and enforced service perimeter', () => {
+test('network enforcement is scoped to exact VPC and rejects selectors, escapes and public IPs', () => {
   assert.equal(evaluateGcpNetworkPosture(goodNetwork()).ready, true)
-  const broad = goodNetwork(); broad.firewalls.items.unshift({ name: 'oops', direction: 'EGRESS', priority: 500, destinationRanges: ['0.0.0.0/0'], allowed: [{ IPProtocol: 'tcp', ports: ['443'] }] })
+  const broad = goodNetwork(); broad.firewalls.items.unshift({ name: 'oops', network: NETWORK, direction: 'EGRESS', priority: 500, destinationRanges: ['0.0.0.0/0'], allowed: [{ IPProtocol: 'tcp', ports: ['443'] }] })
   assert.equal(evaluateGcpNetworkPosture(broad).ready, false)
+  const wrongVpc = goodNetwork(); wrongVpc.firewalls.items = wrongVpc.firewalls.items.map((rule) => ({ ...rule, network: `${NETWORK}-other` }))
+  assert.equal(evaluateGcpNetworkPosture(wrongVpc).ready, false)
+  const targeted = goodNetwork(); targeted.firewalls.items[1].targetServiceAccounts = ['only-one@project.iam.gserviceaccount.com']
+  assert.equal(evaluateGcpNetworkPosture(targeted).ready, false)
   const publicIp = goodNetwork(); publicIp.instances.items['zones/europe-west3-a'].instances[0].networkInterfaces[0].accessConfigs = [{ natIP: '1.2.3.4' }]
   assert.equal(evaluateGcpNetworkPosture(publicIp).ready, false)
   const dry = goodNetwork(); dry.perimeter.useExplicitDryRunSpec = true
   assert.equal(evaluateGcpNetworkPosture(dry).ready, false)
+  const escape = goodNetwork(); escape.perimeter.status.egressPolicies = [{ egressTo: { resources: ['*'] } }]
+  assert.equal(evaluateGcpNetworkPosture(escape).ready, false)
 })
 
 test('WORM posture requires permanently locked retention, uniform access and public-access prevention', async () => {
@@ -111,15 +125,22 @@ test('WORM posture requires permanently locked retention, uniform access and pub
   assert.equal(result.stored, true)
 })
 
-test('end-to-end qualification becomes CANDIDATE only after HSM + DLP + network + immutable write all prove themselves', async () => {
-  const hsm_signer = { async posture() { return { ready: true, provider: 'gcp-cloud-hsm', protection_level: 'HSM', key_version_name: KEY_NAME, location: 'europe-west3', algorithm: 'EC_SIGN_P256_SHA256', public_key_fingerprint: 'sha256:key', attestation_fingerprint: 'sha256:att' } }, async sign() { return { algorithm: 'ECDSA_P256_SHA256', key_id: KEY_NAME, value: Buffer.from('sig').toString('base64') } } }
+function qualificationSigner(name) {
+  const keyName = `projects/trustready-prod/locations/europe-west3/keyRings/legal/cryptoKeys/${name}/cryptoKeyVersions/1`
+  return { hardware_backed: true, async posture() { return { ready: true, provider: 'gcp-cloud-hsm', protection_level: 'HSM', key_version_name: keyName, location: 'europe-west3', algorithm: 'EC_SIGN_P256_SHA256', public_key_fingerprint: `sha256:${'1'.repeat(64)}`, attestation_fingerprint: `sha256:${'2'.repeat(64)}` } }, async sign() { return { algorithm: 'ECDSA_P256_SHA256', key_id: keyName, value: Buffer.from('synthetic-signature-that-is-long-enough').toString('base64') } } }
+}
+function qualificationSigners() { return { dlp: qualificationSigner('dlp'), egress: qualificationSigner('egress'), network: qualificationSigner('network'), evidence: qualificationSigner('evidence') } }
+
+test('end-to-end qualification requires four purpose-separated HSM CryptoKeys plus DLP network and WORM proof', async () => {
   let scans = 0
-  const dlp_scanner = { async inspect() { scans++; return scans === 1 ? { safe: true, payload_fingerprint: 'sha256:safe', scanner_id: 'gcp-sensitive-data-protection', scanner_location: 'eu', detected_categories: [] } : { safe: false, payload_fingerprint: 'sha256:pii', scanner_id: 'gcp-sensitive-data-protection', scanner_location: 'eu', detected_categories: ['EMAIL_ADDRESS', 'IBAN_CODE'] } } }
-  const network_collector = { async collect() { return { ready: true, deny_by_default: true, only_restricted_google_apis: true, provider: 'gcp-vpc-service-controls', restricted_vip: '199.36.153.4/30', perimeter_name: 'legal', deny_rule: 'deny-all', allow_rule: 'restricted-only' } } }
+  const dlp_scanner = { async inspect() { scans++; return scans === 1 ? { safe: true, payload_fingerprint: 'sha256:safe', scanner_id: 'gcp-sensitive-data-protection', scanner_version: 'google-sensitive-data-protection-v3', scanner_location: 'eu', scanner_config_fingerprint: DLP_CONFIG, detected_categories: [] } : { safe: false, payload_fingerprint: 'sha256:pii', scanner_id: 'gcp-sensitive-data-protection', scanner_version: 'google-sensitive-data-protection-v3', scanner_location: 'eu', scanner_config_fingerprint: DLP_CONFIG, detected_categories: ['EMAIL_ADDRESS', 'IBAN_CODE'] } } }
+  const network_collector = { async collect() { return { ready: true, deny_by_default: true, only_restricted_google_apis: true, provider: 'gcp-vpc-service-controls', restricted_vip: '199.36.153.4/30', perimeter_name: 'legal', protected_network: NETWORK, protected_resource: 'projects/123', deny_rule: 'deny-all', allow_rule: 'restricted-only' } } }
   const worm_store = { async posture() { return { ready: true, retention_locked: true, provider: 'gcs-bucket-lock', bucket: 'evidence', retention_seconds: 2592000 } }, async append({ bytes }) { return { stored: true, bucket: 'evidence', object_name: 'proof', generation: '1', content_hash: `sha256:${crypto.createHash('sha256').update(bytes).digest('hex')}`, retention_expiration_time: '2026-10-02T12:00:00Z' } } }
-  const result = await qualifyGcpLegalInfrastructure({ hsm_signer, dlp_scanner, network_collector, worm_store, tenant_id: 'tenant-a', policy_version: 'legal-v4', release: 'r4', now: new Date('2026-09-02T12:00:00Z') })
+  const result = await qualifyGcpLegalInfrastructure({ hsm_signers: qualificationSigners(), dlp_scanner, network_collector, worm_store, tenant_id: 'tenant-a', policy_version: 'legal-v4', release: 'r4', now: new Date('2026-09-02T12:00:00Z') })
   assert.equal(result.status, 'CANDIDATE')
-  assert.deepEqual(result.controls, { hsm: true, dlp: true, network: true, worm: true })
-  const falseNegative = { ...dlp_scanner, async inspect() { return { safe: true, payload_fingerprint: 'sha256:x', detected_categories: [] } } }
-  assert.equal((await qualifyGcpLegalInfrastructure({ hsm_signer, dlp_scanner: falseNegative, network_collector, worm_store, tenant_id: 'tenant-a', policy_version: 'legal-v4', release: 'r4' })).code, 'DLP_FALSE_NEGATIVE')
+  assert.equal(result.controls.hsm_key_separation, true)
+  const reused = qualificationSigners(); reused.network = reused.dlp
+  assert.equal((await qualifyGcpLegalInfrastructure({ hsm_signers: reused, dlp_scanner, network_collector, worm_store, tenant_id: 'tenant-a', policy_version: 'legal-v4', release: 'r4' })).code, 'HSM_NOT_READY')
+  const falseNegative = { async inspect() { return { safe: true, payload_fingerprint: 'sha256:x', scanner_config_fingerprint: DLP_CONFIG, detected_categories: [] } } }
+  assert.equal((await qualifyGcpLegalInfrastructure({ hsm_signers: qualificationSigners(), dlp_scanner: falseNegative, network_collector, worm_store, tenant_id: 'tenant-a', policy_version: 'legal-v4', release: 'r4' })).code, 'DLP_FALSE_NEGATIVE')
 })
