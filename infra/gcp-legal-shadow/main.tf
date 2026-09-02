@@ -50,6 +50,7 @@ resource "google_compute_subnetwork" "legal" {
   region                   = var.region
   network                  = google_compute_network.legal.id
   ip_cidr_range            = "10.88.0.0/24"
+  stack_type               = "IPV4_ONLY"
   private_ip_google_access = true
 }
 
