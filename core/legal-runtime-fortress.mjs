@@ -1,12 +1,12 @@
 import crypto from 'node:crypto'
-import {ZONES,authorizeMatter,parseTime,sha256,signEnvelope,verifyEnvelope,verifyIdentityAssertion,verifyMatterAuthorization} from './legal-key-identity.mjs'
+import {ZONES,authorizeMatter,isRootedKeyTrustStore,parseTime,sha256,signEnvelope,verifyEnvelope,verifyIdentityAssertion,verifyMatterAuthorization} from './legal-key-identity.mjs'
 import {inspectPayload} from './legal-dlp.mjs'
 import {verifyDlpAttestation} from './legal-content-guard.mjs'
 import {evaluateNetworkEgress,verifyEgressEnforcement} from './legal-network.mjs'
 
 const DEPLOYMENT_MODES=new Set(['shadow','production'])
 function deny(code,reason,now=new Date(),extra={}){return{allowed:false,code,reason,decided_at:now.toISOString(),...extra}}
-function productionTrustReady(runtimeState,keyStore){return runtimeState?.production!==true||keyStore?.rooted===true}
+function productionTrustReady(runtimeState,keyStore){return runtimeState?.production!==true||isRootedKeyTrustStore(keyStore)}
 
 export function signProviderPassport({body,private_key,key_id}){
   if(!body?.policy_version)throw new TypeError('provider passport policy_version required')
@@ -114,7 +114,7 @@ export function validateActionPayload(action,payload){
 }
 
 export function issueActionApproval({identity_assertion,matter_authorization,key_store,tenant_id,matter_id,action,payload,policy_version,expires_at,private_key,key_id,production=false,now=new Date()}){
-  if(production&&key_store?.rooted!==true)throw new Error('production requires root-pinned key trust')
+  if(production&&!isRootedKeyTrustStore(key_store))throw new Error('production requires root-pinned key trust')
   const id=verifyIdentityAssertion({assertion:identity_assertion,key_store,now})
   if(!id.valid||id.principal.tenant_id!==tenant_id||id.principal.mfa!==true)throw new Error('verified MFA identity required')
   if(!policy_version)throw new Error('active policy version required')
