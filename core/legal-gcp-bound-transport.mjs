@@ -30,6 +30,12 @@ function safeHeader(name, value) {
 function closeSocket(socket) { try { socket?.destroy() } catch {} }
 function transportFingerprint(href, bytes) { return `sha256:${sha256(Buffer.concat([Buffer.from(href, 'utf8'), Buffer.from('\n'), bytes]))}` }
 function validDate(value) { const d = value instanceof Date ? value : new Date(value); return Number.isFinite(d.getTime()) ? d : null }
+function synchronousClock(clock) {
+  let value
+  try { value = clock() } catch { return null }
+  if (value && typeof value.then === 'function') return null
+  return validDate(value)
+}
 
 function openTls({ address, hostname, tls_connect, timeout_ms }) {
   return new Promise((resolve, reject) => {
@@ -142,21 +148,21 @@ export async function sendPreparedGoogleApiRequest({ transport, prepared, header
   if (transport?.[TRANSPORT_BRAND] !== true || !state || state.transport !== transport || state.used === true) return { ok: false, reason: 'prepared restricted request invalid or already consumed' }
   for (const [name, value] of Object.entries(headers)) if (!safeHeader(name, value)) { cancelPreparedGoogleApiRequest(prepared); return { ok: false, reason: 'unsafe outbound header denied' } }
 
-  let sendNow
-  try { sendNow = validDate(await clock()) } catch { sendNow = null }
-  if (!sendNow) { cancelPreparedGoogleApiRequest(prepared); return { ok: false, reason: 'current send time unavailable' } }
-  if (sendNow.getTime() >= state.expires_at_ms) { cancelPreparedGoogleApiRequest(prepared); return { ok: false, reason: 'prepared network attestation expired before send' } }
+  // Critical send section: the final clock read and full authorization gate MUST be synchronous.
+  // There is deliberately no await, promise callback, timer, or other asynchronous boundary between
+  // this gate and construction/submission of the HTTP request on the already-attested socket.
+  const finalNow = synchronousClock(clock)
+  if (!finalNow) { cancelPreparedGoogleApiRequest(prepared); return { ok: false, reason: 'final send clock must be synchronous and valid' } }
+  if (finalNow.getTime() >= state.expires_at_ms) { cancelPreparedGoogleApiRequest(prepared); return { ok: false, reason: 'prepared network attestation expired before send' } }
   if (state.socket?.destroyed === true) { cancelPreparedGoogleApiRequest(prepared); return { ok: false, reason: 'attested TLS socket expired or closed before send' } }
 
   if (before_send !== null) {
     if (typeof before_send !== 'function') { cancelPreparedGoogleApiRequest(prepared); return { ok: false, reason: 'invalid pre-send authorization gate' } }
     let gate
-    try { gate = await before_send(sendNow) } catch { gate = null }
+    try { gate = before_send(finalNow) } catch { gate = null }
+    if (gate && typeof gate.then === 'function') { cancelPreparedGoogleApiRequest(prepared); return { ok: false, reason: 'pre-send authorization gate must be synchronous' } }
     const allowed = gate === true || gate?.allowed === true
     if (!allowed) { cancelPreparedGoogleApiRequest(prepared); return { ok: false, reason: gate?.reason || 'pre-send authorization denied' } }
-    let afterGate
-    try { afterGate = validDate(await clock()) } catch { afterGate = null }
-    if (!afterGate || afterGate.getTime() >= state.expires_at_ms || state.socket?.destroyed === true) { cancelPreparedGoogleApiRequest(prepared); return { ok: false, reason: 'prepared network attestation expired during pre-send authorization' } }
   }
 
   state.used = true
@@ -186,7 +192,7 @@ export async function sendPreparedGoogleApiRequest({ transport, prepared, header
         res.on('end', () => {
           if (resolved) return
           const response = Buffer.concat(chunks)
-          finish({ ok: res.statusCode >= 200 && res.statusCode < 300, status: res.statusCode, body: response, response_fingerprint: `sha256:${sha256(response)}`, body_fingerprint: state.body_fingerprint, request_fingerprint: state.request_fingerprint, peer_fingerprint: state.peer_fingerprint })
+          finish({ ok: res.statusCode >= 200 && res.statusCode < 300, status: res.statusCode, body: response, response_fingerprint: `sha256:${sha256(response)}`, body_fingerprint: state.body_fingerprint, request_fingerprint: state.request_fingerprint, peer_fingerprint: state.peer_fingerprint, final_authorized_at: finalNow.toISOString() })
         })
       })
       req.setTimeout?.(transport.timeout_ms, () => { req.destroy?.(); closeSocket(state.socket); finish({ ok: false, reason: 'provider request timeout' }) })
