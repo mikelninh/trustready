@@ -1,5 +1,6 @@
 const METADATA_BASE = 'http://169.254.169.254/computeMetadata/v1'
 const RUNTIME_IDENTITY_BRAND = Symbol('trustready.gce-runtime-identity-provider')
+const TEST_RUNTIME_IDENTITY_BRAND = Symbol('trustready.test-gce-runtime-identity-provider')
 const NATIVE_FETCH = typeof globalThis.fetch === 'function' ? globalThis.fetch.bind(globalThis) : null
 
 function tail(value) {
@@ -28,28 +29,23 @@ async function metadataText(fetch_impl, path) {
   return value
 }
 
-export function isTrustedGceRuntimeIdentityProvider(provider) {
-  return provider?.[RUNTIME_IDENTITY_BRAND] === true && typeof provider.collect === 'function'
-}
-
-export function createGceRuntimeIdentityProvider({ fetch_impl, test_only_allow_custom_fetch = false } = {}) {
-  const selectedFetch = fetch_impl ?? NATIVE_FETCH
-  if (typeof selectedFetch !== 'function' || typeof NATIVE_FETCH !== 'function') throw new TypeError('GCE metadata fetch implementation required')
-  if (selectedFetch !== NATIVE_FETCH && test_only_allow_custom_fetch !== true) throw new TypeError('custom GCE metadata fetch is test-only')
+function buildProvider({ fetch_impl, test_only }) {
+  if (typeof fetch_impl !== 'function') throw new TypeError('GCE metadata fetch implementation required')
   return Object.freeze({
     [RUNTIME_IDENTITY_BRAND]: true,
+    ...(test_only ? { [TEST_RUNTIME_IDENTITY_BRAND]: true } : {}),
     backend: 'gce-local-metadata',
     async collect() {
       let values
       try {
         values = await Promise.all([
-          metadataText(selectedFetch, 'project/project-id'),
-          metadataText(selectedFetch, 'instance/name'),
-          metadataText(selectedFetch, 'instance/id'),
-          metadataText(selectedFetch, 'instance/zone'),
-          metadataText(selectedFetch, 'instance/network-interfaces/0/network'),
-          metadataText(selectedFetch, 'instance/network-interfaces/0/subnetwork'),
-          metadataText(selectedFetch, 'instance/service-accounts/default/email'),
+          metadataText(fetch_impl, 'project/project-id'),
+          metadataText(fetch_impl, 'instance/name'),
+          metadataText(fetch_impl, 'instance/id'),
+          metadataText(fetch_impl, 'instance/zone'),
+          metadataText(fetch_impl, 'instance/network-interfaces/0/network'),
+          metadataText(fetch_impl, 'instance/network-interfaces/0/subnetwork'),
+          metadataText(fetch_impl, 'instance/service-accounts/default/email'),
         ])
       } catch (error) {
         return { ready: false, reason: error.message }
@@ -75,4 +71,25 @@ export function createGceRuntimeIdentityProvider({ fetch_impl, test_only_allow_c
       }
     },
   })
+}
+
+export function isTrustedGceRuntimeIdentityProvider(provider) {
+  return provider?.[RUNTIME_IDENTITY_BRAND] === true && typeof provider.collect === 'function'
+}
+
+export function isProductionGceRuntimeIdentityProvider(provider) {
+  return isTrustedGceRuntimeIdentityProvider(provider) && provider?.[TEST_RUNTIME_IDENTITY_BRAND] !== true
+}
+
+export function isTestGceRuntimeIdentityProvider(provider) {
+  return isTrustedGceRuntimeIdentityProvider(provider) && provider?.[TEST_RUNTIME_IDENTITY_BRAND] === true
+}
+
+export function createGceRuntimeIdentityProvider() {
+  if (typeof NATIVE_FETCH !== 'function') throw new TypeError('native fetch required for production GCE metadata identity')
+  return buildProvider({ fetch_impl: NATIVE_FETCH, test_only: false })
+}
+
+export function createGceRuntimeIdentityProviderForTest({ fetch_impl }) {
+  return buildProvider({ fetch_impl, test_only: true })
 }
