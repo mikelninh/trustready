@@ -28,11 +28,11 @@ output "hsm_key_version_prefixes" {
 output "qualification_profile" {
   value = {
     project_id             = var.project_id
-    project_number         = var.project_number
+    project_number         = data.google_project.current.number
     region                 = var.region
     subnetwork             = google_compute_subnetwork.legal.name
     service_perimeter_name = google_access_context_manager_service_perimeter.legal.name
-    protected_resource     = "projects/${var.project_number}"
+    protected_resource     = "projects/${data.google_project.current.number}"
     evidence_bucket        = google_storage_bucket.evidence.name
   }
 }
