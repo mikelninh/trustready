@@ -14,6 +14,18 @@ variable "region" {
   default     = "europe-west3"
 }
 
+variable "gateway_zone" {
+  description = "Single GCE zone for the dedicated TrustReady Legal shadow gateway workload."
+  type        = string
+  default     = "europe-west3-a"
+}
+
+variable "gateway_machine_type" {
+  description = "Machine type for the dedicated mandate-shadow gateway."
+  type        = string
+  default     = "e2-small"
+}
+
 variable "evidence_bucket_name" {
   description = "Globally unique GCS bucket name for immutable TrustReady evidence."
   type        = string
