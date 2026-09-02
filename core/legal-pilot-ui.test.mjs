@@ -25,7 +25,7 @@ test('Bao pilot contains no browser network egress primitive', () => {
 
 test('Bao pilot exposes measurable utility and control success criteria', () => {
   assert.match(html, /≥20 echte Vorgänge/i)
-  assert.match(html, /30\+.*min \/ Tag/is)
+  assert.match(html, /30<span[^>]*>\+<\/span><small> min \/ Tag<\/small>/is)
   assert.match(html, /0 nicht autorisierte externe Aktionen/i)
   assert.match(html, /Bao möchte es weiter benutzen/i)
 })
