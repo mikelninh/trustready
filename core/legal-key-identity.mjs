@@ -36,7 +36,8 @@ function verifySignature(publicKey, body, signature, algorithm) {
     const data = Buffer.from(canonicalize(body))
     const sig = Buffer.from(signature, 'base64')
     if (algorithm === 'Ed25519') return crypto.verify(null, data, asPublicKey(publicKey), sig)
-    return crypto.verify('sha256', data, asPublicKey(publicKey), sig)
+    const digest = crypto.createHash('sha256').update(data).digest()
+    return crypto.verify(null, digest, asPublicKey(publicKey), sig)
   } catch {
     return false
   }
