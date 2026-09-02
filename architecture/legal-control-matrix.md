@@ -19,8 +19,8 @@ This matrix is the implementation checklist for law-firm deployments. It maps ea
 | LT-013 | Encryption in transit | BLOCK | TLS configuration/test |
 | LT-014 | Encryption at rest | BLOCK | KMS/storage evidence |
 | LT-015 | Tenant-separated keys | BLOCK | key mapping/config |
-| LT-016 | Secrets manager; no secrets in repo/logs | BLOCK | secret scans |
-| LT-017 | MFA for privileged access | BLOCK | identity configuration |
+| LT-016 | Approved secrets manager in production; no secrets in repo/logs | BLOCK | runtime/config proof of secrets-manager sourcing + repository/log secret scans + rotation/revocation test |
+| LT-017 | MFA for every human account with mandate access, including lawyers, plus all privileged accounts | BLOCK | IdP/runtime configuration + account-class coverage test proving no mandate-capable or privileged human account is single-factor |
 | LT-018 | Least-privilege RBAC/ABAC | BLOCK | policy + periodic review |
 | LT-019 | Raw mandate content excluded from normal logs | BLOCK | log redaction tests |
 | LT-020 | Tamper-evident security audit trail | BLOCK | integrity verification |
@@ -49,7 +49,7 @@ This matrix is the implementation checklist for law-firm deployments. It maps ea
 | LT-043 | Security headers/session controls pass | BLOCK | automated test |
 | LT-044 | Independent penetration test current for production service | RELEASE GATE | report/remediation evidence |
 | LT-045 | Vendor review expiry enforced | BLOCK | review timestamp |
-| LT-046 | Evidence pack export reproducible | BLOCK | signed export manifest |
+| LT-046 | Evidence pack export reproducible and independently authenticatable | BLOCK | canonical artifact digests + detached digital signature + signer/key identity + independent verification test |
 
 ## Scoring rule
 
