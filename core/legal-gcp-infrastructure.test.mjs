@@ -15,7 +15,7 @@ const ec = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
 const publicPem = ec.publicKey.export({ type: 'spki', format: 'pem' }).toString()
 const hsmMetadata = { name: KEY_NAME, state: 'ENABLED', protectionLevel: 'HSM', algorithm: 'EC_SIGN_P256_SHA256', attestation: { format: 'CAVIUM_V2_COMPRESSED', content: Buffer.from('attestation').toString('base64') } }
 const hsmPublic = { algorithm: 'EC_SIGN_P256_SHA256', pem: publicPem }
-const DLP_CONFIG = legalDlpConfigFingerprint()
+const DLP_CONFIG = legalDlpConfigFingerprint({ project_id: 'trustready-prod', location: 'eu' })
 const token = async () => 'test-access-token-that-is-long-enough'
 function jsonResponse(body, status = 200) { return { ok: status >= 200 && status < 300, status, async json() { return structuredClone(body) } } }
 
@@ -38,11 +38,11 @@ test('Cloud HSM test signer verifies metadata public key and fails closed on out
 
 test('ECDSA HSM-style envelope verification matches Cloud KMS SHA-256 semantics', async () => {
   const signer = { async sign({ body }) { return { algorithm: 'ECDSA_P256_SHA256', key_id: 'hsm-root', value: crypto.sign('sha256', Buffer.from(canonicalize(body)), ec.privateKey).toString('base64') } } }
-  const envelope = await signEnvelopeWithSigner({ body: { policy: 'legal-v8' }, signer, purpose: 'trust_root' })
+  const envelope = await signEnvelopeWithSigner({ body: { policy: 'legal-v11' }, signer, purpose: 'trust_root' })
   const store = createKeyTrustStore([{ key_id: 'hsm-root', purpose: 'trust_root', public_key: ec.publicKey }])
   assert.equal(verifyEnvelope({ envelope, key_store: store, purpose: 'trust_root' }).valid, true)
-  envelope.body.policy = 'attacker'
-  assert.equal(verifyEnvelope({ envelope, key_store: store, purpose: 'trust_root' }).valid, false)
+  const tampered = { body: { ...envelope.body, policy: 'attacker' }, signature: { ...envelope.signature } }
+  assert.equal(verifyEnvelope({ envelope: tampered, key_store: store, purpose: 'trust_root' }).valid, false)
 })
 
 test('Sensitive Data Protection test scanner pins config and fails closed on malformed response PII or outage', async () => {
@@ -101,6 +101,6 @@ test('infrastructure qualification rejects test and self-asserted adapters inste
   const runtime = createGceRuntimeIdentityProviderForTest({ fetch_impl: async (url) => metadataResponse(metadata[url.split('/computeMetadata/v1/')[1]]) })
   const network = createGcpNetworkPostureCollectorForTest({ project_id: 'trustready-prod', region: 'europe-west3', subnetwork: 'legal', service_perimeter_name: 'accessPolicies/1/servicePerimeters/legal', fetch_impl: async () => jsonResponse({}), token_provider: token, runtime_identity_provider: runtime })
   const worm = createGcsWormEvidenceStoreForTest({ bucket: 'trustready-evidence', fetch_impl: async () => jsonResponse({}), token_provider: token })
-  const result = await qualifyGcpLegalInfrastructure({ hsm_signers: { dlp: fakeHsm, egress: fakeHsm, network: fakeHsm, evidence: fakeHsm }, dlp_scanner: scanner, network_collector: network, worm_store: worm, tenant_id: 'tenant-a', policy_version: 'v8', release: 'r8', now: NOW })
+  const result = await qualifyGcpLegalInfrastructure({ hsm_signers: { dlp: fakeHsm, egress: fakeHsm, network: fakeHsm, evidence: fakeHsm }, dlp_scanner: scanner, network_collector: network, worm_store: worm, tenant_id: 'tenant-a', policy_version: 'v11', release: 'r11', now: NOW })
   assert.equal(result.status, 'NOT_READY'); assert.equal(result.code, 'PRODUCTION_DLP_ADAPTER_REQUIRED')
 })
