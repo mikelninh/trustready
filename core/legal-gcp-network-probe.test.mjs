@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
 import crypto from 'node:crypto'
-import { createKeyTrustStore, signEnvelopeWithSigner, verifyEnvelope } from './legal-key-identity.mjs'
+import { canonicalize, createKeyTrustStore, verifyEnvelope } from './legal-key-identity.mjs'
 import { createRestrictedGoogleApiProbe, evaluateRestrictedGoogleDns } from './legal-gcp-network-probe.mjs'
 
 const ec = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
@@ -10,14 +10,9 @@ const keyId = 'projects/p/locations/europe-west3/keyRings/legal/cryptoKeys/netwo
 const signer = {
   hardware_backed: true,
   async sign({ body }) {
-    const digest = crypto.createHash('sha256').update(Buffer.from(JSON.stringify(sortDeep(body)))).digest()
-    return { algorithm: 'ECDSA_P256_SHA256', key_id: keyId, value: crypto.sign(null, digest, ec.privateKey).toString('base64') }
+    const bytes = Buffer.from(canonicalize(body))
+    return { algorithm: 'ECDSA_P256_SHA256', key_id: keyId, value: crypto.sign('sha256', bytes, ec.privateKey).toString('base64') }
   },
-}
-function sortDeep(value) {
-  if (Array.isArray(value)) return value.map(sortDeep)
-  if (value && typeof value === 'object') return Object.fromEntries(Object.keys(value).sort().map((key) => [key, sortDeep(value[key])]))
-  return value
 }
 
 function tlsFactory({ authorised = true, remote = '199.36.153.4', error = false } = {}) {
