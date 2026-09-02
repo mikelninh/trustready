@@ -1,7 +1,7 @@
 # TrustReady Legal — External-Style Re-Audit v12
 
 Date: 2026-09-02
-Scope: PR #14 (`legal-trust-layer`). The v12 security implementation was verified at `8e7ae13bc81a8eb07d6dafcc535501f68a7612ae` before this documentation commit. This document does not self-declare the final exact-head benchmark: the immutable PR head carrying it must itself pass same-SHA CI, dogfood and adversarial Codex exact-head review.
+Scope: PR #14 (`legal-trust-layer`). The v12 security implementation was verified at `56c71e0ecf4cd43795ef554d78495d37aa6cc661` before this documentation commit. This document does not self-declare the final exact-head benchmark: the immutable PR head carrying it must itself pass same-SHA CI, dogfood and adversarial Codex exact-head review.
 
 Auditor stance: adversarial pre-audit / readiness assessment. This is **not** independent assurance, certification, a legal opinion, a C5 attestation, an AIC4 attestation, or proof that a live Bao deployment is ready for mandate data.
 
@@ -13,14 +13,14 @@ Auditor stance: adversarial pre-audit / readiness assessment. This is **not** in
 
 **Real mandate-data external-AI shadow: NOT READY.** Live E3 operating evidence, authorised legal/privacy E4 evidence and an independent external final assurance verdict remain missing.
 
-Verified evidence on implementation head `8e7ae13b...`:
+Verified evidence on implementation head `56c71e0e...`:
 
-- full repository tests: **125/125 PASS**, 0 failures;
+- full repository tests: **126/126 PASS**, 0 failures;
 - existing selected legal/security audit suite: **98/98 PASS**, 0 failures;
-- dedicated v12 authenticated-deployment regressions: **7/7 PASS**, 0 failures, no missing regressions;
+- dedicated v12 authenticated-deployment regressions: **8/8 PASS**, 0 failures, no missing regressions;
 - scanner benchmark: **30 labelled cases**, verified precision 1.0, verified recall 1.0, false-verified rate 0, exact-status accuracy 1.0, provenance completeness 1.0, 0 false positives and 0 false negatives;
-- GitHub CI **#234: SUCCESS**;
-- dogfood **#206: SUCCESS**;
+- GitHub CI **#238: SUCCESS**;
+- dogfood **#210: SUCCESS**;
 - `npm run audit:legal`: **SUCCESS**;
 - audit schema: `trustready-legal-preaudit-v12`;
 - `pre_audit_ready: true`;
@@ -38,10 +38,13 @@ The rooted trust store retains the signed keyring expiry and checks it on **ever
 Before any mandate payload is inspected by Google Sensitive Data Protection, the production pipeline authenticates the executing VM through the local GCE metadata endpoint and obtains the runtime project identity. DLP must be configured for that exact authenticated project. Network/VPC-SC qualification must then independently describe the same executing workload and project before DLP receives mandate content.
 
 ### AUD-P1-44 — infrastructure qualification could combine DLP and network evidence from different projects — CLOSED
-The infrastructure qualifier now authenticates local GCE runtime identity first, requires DLP to match that project, validates the network collector against the same runtime, checks all four production HSM key versions against the authenticated project, and only then runs its DLP canaries. Caller-supplied `now` or `clock` is rejected so qualification freshness cannot be backdated.
+The infrastructure qualifier authenticates local GCE runtime identity first, requires DLP to match that project, validates the network collector against the same runtime, checks all four production HSM key versions against the authenticated project, and only then runs its DLP canaries. Caller-supplied `now` or `clock` is rejected so qualification freshness cannot be backdated.
 
 ### AUD-P1-45 — any locked WORM bucket could be substituted as evidence destination — CLOSED
 The approved evidence bucket is pinned onto the dedicated gateway as GCE instance metadata provisioned directly from `google_storage_bucket.evidence.name`. Runtime code reads that value through authenticated local metadata. The WORM adapter must report that exact bucket, GCS bucket metadata must carry a concrete project number, and that project number must equal the project protected by the qualified VPC Service Controls perimeter. WORM posture is verified **before mandate DLP inspection**.
+
+### AUD-P1-46 — runtime mandate path could use HSM keys from another GCP project — CLOSED
+The mandate-data runtime now applies the same project identity requirement already used by the infrastructure qualifier: each of the four HSM key-version names for DLP, egress, network and evidence must resolve to the exact authenticated GCE runtime project. A real production HSM key in another project cannot satisfy the runtime path even if credentials or a broader perimeter could otherwise reach it. This check executes before signed network enforcement and before any mandate DLP call.
 
 ## v11 trust-boundary closures retained
 
@@ -85,7 +88,7 @@ The approved evidence bucket is pinned onto the dedicated gateway as GCE instanc
 4. verify provider passport before routing and bind exact use case/region/target;
 5. authenticate the executing GCE runtime through local metadata;
 6. require DLP project = authenticated runtime project and WORM bucket = runtime-pinned evidence bucket;
-7. verify four distinct project-bound production HSM key postures;
+7. verify four distinct production HSM key postures and require **all four HSM keys belong to the authenticated runtime project**;
 8. collect and sign network enforcement; require it describes the exact authenticated runtime and project;
 9. derive the protected project number from VPC-SC evidence;
 10. verify locked WORM posture; require exact runtime-pinned bucket and exact protected project number;
@@ -105,7 +108,7 @@ This sequence is repository engineering proof. It does **not** establish that a 
 
 ## Automated audit gate v12
 
-`npm run audit:legal` now executes the v12 fail-closed release gate. It inherits the v11 adversarial/legal suite and additionally requires all seven named v12 regressions:
+`npm run audit:legal` executes the v12 fail-closed release gate. It inherits the v11 adversarial/legal suite and additionally requires all eight named v12 regressions:
 
 1. root-keyring expiry enforced per resolution;
 2. authenticated GCE runtime pins exact evidence bucket;
@@ -113,7 +116,8 @@ This sequence is repository engineering proof. It does **not** establish that a 
 4. infrastructure qualifier rejects caller-controlled time;
 5. qualifier authenticates runtime/network/WORM before DLP canaries;
 6. mandate pipeline authenticates runtime/network/WORM before mandate DLP;
-7. Terraform pins the provisioned evidence bucket onto the dedicated gateway metadata.
+7. mandate pipeline binds all four HSM key projects to the authenticated runtime project before egress or DLP;
+8. Terraform pins the provisioned evidence bucket onto the dedicated gateway metadata.
 
 A missing or failing v12 regression turns Engineering PASS into FAIL. The local audit still hard-codes `real_mandate_shadow_ready:false` and `independently_assured:false` unless external evidence/decision processes outside the local pre-audit exist.
 
@@ -158,14 +162,14 @@ A missing or failing v12 regression turns Engineering PASS into FAIL. The local 
 
 | Target | Re-audit v12 verdict |
 |---|---|
-| Repository engineering implementation at `8e7ae13b...` | **PASS** |
-| Full repository test suite | **125/125 PASS** |
+| Repository engineering implementation at `56c71e0e...` | **PASS** |
+| Full repository test suite | **126/126 PASS** |
 | Existing selected legal/security suite | **98/98 PASS** |
-| Dedicated v12 regressions | **7/7 PASS** |
+| Dedicated v12 regressions | **8/8 PASS** |
 | Scanner benchmark | **PASS — 1.0 precision, 1.0 recall, 0 false verified** |
 | v12 local pre-audit | **PASS** |
 | Final documented exact-head benchmark | **REQUIRES SAME-SHA CI + DOGFOOD + CODEX VERDICT** |
-| Known delayed P1 classes through review `5095025151` | **CLOSED + REGRESSION COVERED** |
+| Known delayed P1 classes through review `5095025151` + internally found runtime HSM project asymmetry | **CLOSED + REGRESSION COVERED** |
 | Production action execution | **PHYSICALLY BLOCKED** |
 | Pre-audit / evidence-room readiness | **PASS** |
 | Real mandate-data external-AI shadow | **NOT READY — LIVE E3/E4 + EXTERNAL VERDICT MISSING** |
@@ -174,7 +178,7 @@ A missing or failing v12 regression turns Engineering PASS into FAIL. The local 
 
 ## Product conclusion
 
-TrustReady now treats **signed-object identity, time, executing workload, cloud project, DLP deployment, evidence destination, adapter identity, network path, exact payload and final assurance decision** as explicit trust boundaries rather than caller-controlled claims.
+TrustReady now treats **signed-object identity, time, executing workload, cloud project, HSM project, DLP deployment, evidence destination, adapter identity, network path, exact payload and final assurance decision** as explicit trust boundaries rather than caller-controlled claims.
 
 Promotion remains fail-closed:
 
