@@ -14,6 +14,7 @@ const PRODUCTION_CLOCK = () => new NativeDate()
 function notReady(code, reason, extra = {}) { return { status: 'NOT_READY', code, reason, ...extra } }
 function cryptoKeyIdentity(keyVersionName) { return typeof keyVersionName === 'string' && keyVersionName.includes('/cryptoKeyVersions/') ? keyVersionName.split('/cryptoKeyVersions/')[0] : null }
 function projectNumberFromResource(value) { const match = /^projects\/(\d+)$/.exec(value || ''); return match?.[1] || null }
+function projectIdFromKmsName(value) { const match = /^projects\/([^/]+)\/locations\//.exec(value || ''); return match?.[1] || null }
 
 function normalizeStrictJson(value, state = { seen: new WeakSet(), nodes: 0 }, depth = 0, path = '$') {
   if (depth > 32) throw new TypeError(`${path}: JSON nesting too deep`)
@@ -137,6 +138,9 @@ export async function runGcpMandateShadowPipeline(input = {}) {
   const hsmKeys = Object.values(postures).map((p) => p.key_version_name)
   const cryptoKeys = Object.values(postures).map((p) => cryptoKeyIdentity(p.key_version_name))
   if (new Set(hsmKeys).size !== 4 || new Set(cryptoKeys).size !== 4) return notReady('HSM_KEY_REUSE_DENIED', 'DLP, egress, network and evidence must use four separate HSM CryptoKeys')
+  for (const [purpose, posture] of Object.entries(postures)) {
+    if (projectIdFromKmsName(posture.key_version_name) !== runtimeIdentity.project_id) return notReady('HSM_PROJECT_MISMATCH', `${purpose} HSM key belongs to a different GCP project`)
+  }
 
   const enforcement = await createSignedEgressEnforcementAttestation({ collector: network_collector, signer: egress_signer, tenant_id: pipelineRequest.tenant_id, policy_version: pipelineRequest.policy_version, release, now: pipelineNow })
   if (!enforcement.ready || !enforcement.attestation) return notReady('NETWORK_ENFORCEMENT_DENIED', enforcement.posture?.reason || 'network perimeter did not qualify')
