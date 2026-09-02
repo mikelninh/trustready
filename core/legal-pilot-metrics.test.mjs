@@ -4,10 +4,12 @@ import { normalizePilotEvent, summarizePilotEvents } from './legal-pilot-metrics
 
 const hashA = `sha256:${'a'.repeat(64)}`
 const hashB = `sha256:${'b'.repeat(64)}`
+let sequence = 0
 
 function event(overrides = {}) {
+  sequence += 1
   return {
-    event_id: `evt-${Math.random().toString(16).slice(2, 14)}`,
+    event_id: `evt-generated-${String(sequence).padStart(4, '0')}`,
     type: 'proposal_accepted',
     case_ref_hash: hashA,
     occurred_at: '2026-09-03T08:00:00Z',
