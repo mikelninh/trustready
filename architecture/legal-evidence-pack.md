@@ -27,10 +27,11 @@ Every production tenant must be able to generate an evidence bundle for a chosen
 
 4. Security controls
    - encryption/KMS posture
-   - identity/MFA posture
+   - identity/MFA posture, including every lawyer or other human account with mandate access
    - RBAC/ABAC policy version
    - egress allow-list
-   - secrets scan
+   - runtime/config evidence that production secrets are sourced from an approved secrets manager
+   - repository/log secret scans
    - dependency/SBOM scan
    - SAST/security scan
    - backup/restore evidence
@@ -72,12 +73,13 @@ Every production tenant must be able to generate an evidence bundle for a chosen
    - BSI C5/AIC4 mapping where applicable
    - ISO 27001 mapping/certificate where available
 
-## Manifest
+## Authenticated manifest
 
-Each export contains a machine-readable `manifest.json`:
+Each export contains a canonical machine-readable `manifest.json` and a detached signature. The manifest itself does not contain a self-referential hash. Every exported artifact is represented by a cryptographic digest; the canonical manifest bytes are signed with a dedicated evidence-signing key held separately from the application data store.
 
 ```json
 {
+  "schema": "trustready-legal-evidence-manifest-v1",
   "tenant": "pseudonymous-tenant-id",
   "generated_at": "ISO-8601",
   "release": "git-sha-or-version",
@@ -87,10 +89,20 @@ Each export contains a machine-readable `manifest.json`:
   "controls_fail": 0,
   "mandatory_failures": [],
   "deployment_profile": "SOVEREIGN|EU-PRIVATE|GATEWAY",
-  "artifacts": [],
-  "manifest_hash": "sha256:..."
+  "artifacts": [
+    {"path": "controls.json", "sha256": "..."},
+    {"path": "provider-register.json", "sha256": "..."}
+  ],
+  "signer": {
+    "algorithm": "Ed25519",
+    "key_id": "evidence-signing-key-2026-01"
+  }
 }
 ```
+
+The detached `manifest.sig` signs the canonical `manifest.json` bytes. An auditor must be able to verify the signature with a separately distributed/trusted public key and verify every artifact digest. Rotated/revoked signing keys remain traceable by key ID and validity interval.
+
+A raw SHA-256 value alone is not accepted as provenance evidence because an attacker able to modify the bundle could recompute it.
 
 ## Privacy rule
 
@@ -111,5 +123,6 @@ An auditor should be able to answer these questions in minutes:
 - Can the firm disable external AI immediately?
 - Can deletion and restore be demonstrated?
 - Which exact policy and software version was active at a given time?
+- Was the exported evidence bundle altered after it was signed?
 
 If TrustReady cannot produce evidence for a mandatory claim, the claim must not appear as PASS.
