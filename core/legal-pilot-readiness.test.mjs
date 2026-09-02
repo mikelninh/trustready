@@ -47,3 +47,14 @@ test('real mandate pilot requires live and independent evidence while send remai
   assert.equal(result.real_mandate_pilot_ready, true)
   assert.equal(result.human_approved_send_ready, false)
 })
+
+test('human-approved send becomes reachable only after its own explicit release verdict', () => {
+  const audit = {
+    engineering: { status: 'PASS' },
+    verdict: { pre_audit_ready: true, real_mandate_shadow_ready: true, independently_assured: true, human_approved_send_ready: true },
+  }
+  const result = evaluatePilotReadiness({ audit_report: audit, env: { TRUSTREADY_REAL_MANDATE_DATA_ENABLED: 'true', TRUSTREADY_HUMAN_APPROVED_SEND_ENABLED: 'true' } })
+  assert.equal(result.real_mandate_pilot_ready, true)
+  assert.equal(result.human_approved_send_ready, true)
+  assert.deepEqual(result.blockers, [])
+})
