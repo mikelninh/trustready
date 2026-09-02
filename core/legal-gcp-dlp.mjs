@@ -6,6 +6,7 @@ export const DEFAULT_LEGAL_INFOTYPES = Object.freeze([
   'GERMANY_IDENTITY_CARD_NUMBER', 'GERMANY_TAXPAYER_IDENTIFICATION_NUMBER',
   'MEDICAL_RECORD_NUMBER', 'IP_ADDRESS', 'OPENAI_API_KEY', 'GCP_API_KEY', 'ANTHROPIC_API_KEY',
 ])
+export const GCP_DLP_SCANNER_VERSION = 'google-sensitive-data-protection-v2'
 
 async function token(tokenProvider) {
   if (typeof tokenProvider !== 'function') throw new Error('GCP access token provider required')
@@ -27,9 +28,7 @@ export function createGoogleSensitiveDataScanner({ project_id, location = 'eu', 
   const endpoint = `https://dlp.googleapis.com/v2/projects/${project_id}/locations/${location}/content:inspect`
 
   return {
-    backend: 'gcp-sensitive-data-protection',
-    location,
-    info_types: [...info_types],
+    backend: 'gcp-sensitive-data-protection', location, info_types: [...info_types], scanner_version: GCP_DLP_SCANNER_VERSION,
     async inspect({ payload }) {
       let value
       try { value = canonicalize(payload) } catch { return { safe: false, reason: 'payload cannot be safely serialised', payload_fingerprint: null } }
@@ -39,30 +38,16 @@ export function createGoogleSensitiveDataScanner({ project_id, location = 'eu', 
       let response
       try {
         response = await fetch_impl(endpoint, {
-          method: 'POST',
-          redirect: 'error',
+          method: 'POST', redirect: 'error',
           headers: { authorization: `Bearer ${accessToken}`, 'content-type': 'application/json', accept: 'application/json' },
-          body: JSON.stringify({
-            inspectConfig: {
-              infoTypes: info_types.map((name) => ({ name })),
-              minLikelihood: min_likelihood,
-              includeQuote: false,
-              limits: { maxFindingsPerRequest: 1000 },
-            },
-            item: { value },
-          }),
+          body: JSON.stringify({ inspectConfig: { infoTypes: info_types.map((name) => ({ name })), minLikelihood: min_likelihood, includeQuote: false, limits: { maxFindingsPerRequest: 1000 } }, item: { value } }),
         })
-      } catch {
-        return { safe: false, reason: 'DLP service unavailable', payload_fingerprint: `sha256:${sha256(value)}` }
-      }
+      } catch { return { safe: false, reason: 'DLP service unavailable', payload_fingerprint: `sha256:${sha256(value)}` } }
       if (!response?.ok) return { safe: false, reason: `DLP request denied (${Number(response?.status) || 0})`, payload_fingerprint: `sha256:${sha256(value)}` }
       const parsed = parseDlpInspectResponse(await response.json())
       return {
-        ...parsed,
-        payload_fingerprint: `sha256:${sha256(value)}`,
-        payload_bytes: bytes,
-        scanner_id: 'gcp-sensitive-data-protection',
-        scanner_location: location,
+        ...parsed, payload_fingerprint: `sha256:${sha256(value)}`, payload_bytes: bytes,
+        scanner_id: 'gcp-sensitive-data-protection', scanner_version: GCP_DLP_SCANNER_VERSION, scanner_location: location,
       }
     },
   }
@@ -72,19 +57,13 @@ export async function createSignedDlpAttestation({ scanner, signer, tenant_id, m
   if (!scanner || !signer || !tenant_id || !matter_id || !policy_version) throw new TypeError('DLP attestation context required')
   const result = await scanner.inspect({ payload })
   if (!result.safe) return { safe: false, scan: result, attestation: null }
+  if (!result.scanner_id || !result.scanner_version) return { safe: false, scan: { ...result, reason: 'DLP scanner identity/version missing' }, attestation: null }
   const body = {
-    schema: 'trustready-dlp-attestation-v1',
-    safe: true,
-    tenant_id,
-    matter_id,
-    payload_fingerprint: result.payload_fingerprint,
-    policy_version,
-    detected_categories: result.detected_categories || [],
-    findings_count: result.findings_count || 0,
-    scanner_id: result.scanner_id,
-    scanner_location: result.scanner_location,
-    observed_at: now.toISOString(),
-    expires_at: new Date(now.getTime() + ttl_ms).toISOString(),
+    schema: 'trustready-dlp-attestation-v1', safe: true, tenant_id, matter_id,
+    payload_fingerprint: result.payload_fingerprint, policy_version,
+    detected_categories: result.detected_categories || [], findings_count: result.findings_count || 0,
+    scanner_id: result.scanner_id, scanner_version: result.scanner_version, scanner_location: result.scanner_location,
+    observed_at: now.toISOString(), expires_at: new Date(now.getTime() + ttl_ms).toISOString(),
   }
   const attestation = await signEnvelopeWithSigner({ body, signer, purpose: 'dlp_attestation' })
   return { safe: true, scan: result, attestation }
