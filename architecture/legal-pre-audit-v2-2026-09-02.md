@@ -1,18 +1,20 @@
 # TrustReady Legal — External-Style Re-Audit v11
 
 Date: 2026-09-02
-Scope: PR #14 (`legal-trust-layer`) at verified security head `2696dda7643e79861a7997abbafa5fe270c6cd37` before this documentation commit.
+Scope: PR #14 (`legal-trust-layer`). The security implementation was verified at `2696dda7643e79861a7997abbafa5fe270c6cd37` before the v11 documentation commit; the documentation head itself must independently pass CI/dogfood and exact-head Codex review before the engineering benchmark is declared complete.
 Auditor stance: adversarial pre-audit / readiness assessment. This is not independent assurance, certification, a legal opinion, a C5 attestation or an AIC4 attestation.
 
 ## Executive opinion
 
-**Engineering opinion: PASS.**
+**Engineering implementation opinion: PASS at the verified code head.**
+
+**Final exact-head engineering benchmark: PENDING the documented-head CI/dogfood + Codex exact-head review.**
 
 **Real mandate shadow opinion: NOT READY — cryptographically attributable live operating evidence, authorised legal/privacy evidence and an external independent assurance verdict are still missing.**
 
 This hardening loop closes the delayed Codex P1 findings from review `5094888004` that remained applicable after v10, while preserving all earlier fail-closed controls. The new mandatory regressions cover signed-envelope TOCTOU/Proxy attacks, caller-controlled production time, verified provider routing, and DLP project/location configuration identity.
 
-Verified engineering evidence on exact security head `2696dda...`:
+Verified engineering evidence on exact security implementation head `2696dda...`:
 
 - full repository tests: **118/118 PASS**, 0 failures;
 - selected legal/security audit suite: **98/98 PASS**, 0 failures;
@@ -39,19 +41,7 @@ Verified engineering evidence on exact security head `2696dda...`:
 ### AUD-P1-38 — signed envelope bodies could change after signature verification — CLOSED
 Signed envelopes are no longer verified against a caller-owned live object and then returned by reference. TrustReady now creates one strict immutable JSON snapshot of the envelope before signature verification and returns only that verified snapshot.
 
-The signed-envelope snapshot rejects:
-
-- Proxy-wrapped values;
-- getters/accessors and non-enumerable fields;
-- functions and unsupported non-JSON values;
-- symbols;
-- custom object/array prototypes;
-- sparse or malformed arrays;
-- cycles;
-- non-finite numbers;
-- excessive nesting or node counts.
-
-Signed bodies produced by TrustReady are also deep-frozen before signing. A caller cannot expose low-privilege values during verification and then swap in MFA, matter permissions, provider policy, evidence claims or other higher-privilege values afterward.
+The signed-envelope snapshot rejects Proxy-wrapped values, getters/accessors and non-enumerable fields, functions and unsupported non-JSON values, symbols, custom object/array prototypes, sparse or malformed arrays, cycles, non-finite numbers, and excessive nesting/node counts. Signed bodies produced by TrustReady are also deep-frozen before signing. A caller cannot expose low-privilege values during verification and then swap in MFA, matter permissions, provider policy, evidence claims or other higher-privilege values afterward.
 
 ### AUD-P1-39 — production freshness could use caller-controlled historical time — CLOSED
 `runGcpMandateShadowPipeline` no longer accepts caller-controlled `now` or `clock`. Supplying either causes `CALLER_TIME_DENIED` before any trust decision or external security I/O.
@@ -59,9 +49,7 @@ Signed bodies produced by TrustReady are also deep-frozen before signing. A call
 Production time is obtained from an internally captured clock path. Identity expiry, matter-authorisation freshness, provider validity, HSM/DLP/network attestations, socket preparation expiry, final synchronous pre-send authorisation and evidence timestamps therefore cannot be backdated by the pipeline caller.
 
 ### AUD-P1-40 — DLP project/location were not fully part of configuration identity — CLOSED
-Production DLP remains fixed to the Google Sensitive Data Protection EU location and must execute in the same protected GCP project as the gateway. Audit v11 additionally includes the exact `project_id` and `location` in the deployment-pinned DLP configuration fingerprint.
-
-The signed DLP attestation carries scanner project, location, version and configuration fingerprint. A scanner in another project or in `us`/`global` cannot satisfy the production configuration identity.
+Production DLP remains fixed to the Google Sensitive Data Protection EU location and must execute in the same protected GCP project as the gateway. Audit v11 additionally includes the exact `project_id` and `location` in the deployment-pinned DLP configuration fingerprint. The signed DLP attestation carries scanner project, location, version and configuration fingerprint. A scanner in another project or in `us`/`global` cannot satisfy the production configuration identity.
 
 ### AUD-P1-41 — provider routing could read the signed passport before verification — CLOSED PROACTIVELY
 Before selecting network profile, region-specific target URL or use-case routing, the production pipeline verifies the provider passport against rooted trust and the active policy version. Routing uses only the verified immutable passport snapshot. The later full Legal Egress gate independently verifies the same signed provider evidence again at decision time.
@@ -128,22 +116,7 @@ This is **engineering proof**. It does not prove that a live Bao deployment curr
 
 `npm run audit:legal` is a CI release gate. It requires all named P0/P1 regressions above and refuses to turn repository engineering into operating, legal or independent readiness.
 
-Audit v11 reports:
-
-- Engineering: **PASS**
-- selected legal/security tests: **98/98 PASS**
-- production actions physically blocked: **true**
-- exact-instance adapter trust required: **true**
-- strict request snapshot required: **true**
-- signed-envelope snapshot required: **true**
-- production time internally controlled: **true**
-- provider passport verified before routing: **true**
-- production DLP minimum fixed: **true**
-- production DLP location: **eu**
-- production DLP project bound to gateway: **true**
-- DLP configuration fingerprint bound to project/location: **true**
-- production WORM retention floor: **30 days**
-- local pre-audit can issue final assurance verdict: **false**
+Audit v11 requires: Engineering PASS; production actions physically blocked; exact-instance adapter trust; strict request snapshot; signed-envelope snapshot; internally controlled production time; provider passport verification before routing; fixed EU production DLP minimum; DLP project = gateway project; DLP configuration fingerprint bound to project/location; and a 30-day WORM retention floor.
 
 ### Runtime E3/E4 evidence still required
 
@@ -184,7 +157,8 @@ Audit v11 reports:
 
 | Target | Re-audit v11 verdict |
 |---|---|
-| Repository engineering | **PASS** |
+| Repository engineering implementation at verified code head | **PASS** |
+| Final documented exact-head benchmark | **PENDING CI/DOGFOOD + CODEX EXACT-HEAD VERDICT** |
 | Known P0/P1 findings through delayed Codex review 5094888004 | **CLOSED + REGRESSION COVERED** |
 | Signed-envelope snapshot / Proxy / post-verification mutation boundary | **PASS AS ENGINEERING PROOF** |
 | Internally controlled production freshness clock | **PASS AS ENGINEERING PROOF** |
