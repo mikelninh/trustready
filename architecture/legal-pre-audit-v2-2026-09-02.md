@@ -1,18 +1,18 @@
 # TrustReady Legal — External-Style Re-Audit v11
 
 Date: 2026-09-02
-Scope: PR #14 (`legal-trust-layer`). The security implementation was verified at `2696dda7643e79861a7997abbafa5fe270c6cd37` before the v11 documentation commit; the documentation head itself must independently pass CI/dogfood and exact-head Codex review before the engineering benchmark is declared complete.
+Scope: PR #14 (`legal-trust-layer`). The security implementation was verified at `2696dda7643e79861a7997abbafa5fe270c6cd37` before documentation commits. This document intentionally does not self-declare the final exact-head benchmark; the immutable PR head carrying this document must independently pass CI, dogfood and external Codex exact-head review.
 Auditor stance: adversarial pre-audit / readiness assessment. This is not independent assurance, certification, a legal opinion, a C5 attestation or an AIC4 attestation.
 
 ## Executive opinion
 
 **Engineering implementation opinion: PASS at the verified code head.**
 
-**Final exact-head engineering benchmark: PENDING the documented-head CI/dogfood + Codex exact-head review.**
+**Final exact-head engineering benchmark: requires CI + dogfood + Codex review of the same immutable documented head.**
 
 **Real mandate shadow opinion: NOT READY — cryptographically attributable live operating evidence, authorised legal/privacy evidence and an external independent assurance verdict are still missing.**
 
-This hardening loop closes the delayed Codex P1 findings from review `5094888004` that remained applicable after v10, while preserving all earlier fail-closed controls. The new mandatory regressions cover signed-envelope TOCTOU/Proxy attacks, caller-controlled production time, verified provider routing, and DLP project/location configuration identity.
+This hardening loop closes the delayed Codex P1 findings from review `5094888004` that remained applicable after v10, while preserving all earlier fail-closed controls. The mandatory regressions cover signed-envelope TOCTOU/Proxy attacks, caller-controlled production time, verified provider routing, and DLP project/location configuration identity.
 
 Verified engineering evidence on exact security implementation head `2696dda...`:
 
@@ -39,20 +39,16 @@ Verified engineering evidence on exact security implementation head `2696dda...`
 ## Latest trust-boundary closures
 
 ### AUD-P1-38 — signed envelope bodies could change after signature verification — CLOSED
-Signed envelopes are no longer verified against a caller-owned live object and then returned by reference. TrustReady now creates one strict immutable JSON snapshot of the envelope before signature verification and returns only that verified snapshot.
-
-The signed-envelope snapshot rejects Proxy-wrapped values, getters/accessors and non-enumerable fields, functions and unsupported non-JSON values, symbols, custom object/array prototypes, sparse or malformed arrays, cycles, non-finite numbers, and excessive nesting/node counts. Signed bodies produced by TrustReady are also deep-frozen before signing. A caller cannot expose low-privilege values during verification and then swap in MFA, matter permissions, provider policy, evidence claims or other higher-privilege values afterward.
+Signed envelopes are no longer verified against a caller-owned live object and then returned by reference. TrustReady creates one strict immutable JSON snapshot of the envelope before signature verification and returns only that verified snapshot. Proxy-wrapped values, accessors, unsupported non-JSON values, symbols, custom prototypes, sparse/malformed arrays, cycles, non-finite numbers, and excessive nesting/node counts are denied. TrustReady-produced signed bodies are deep-frozen before signing.
 
 ### AUD-P1-39 — production freshness could use caller-controlled historical time — CLOSED
-`runGcpMandateShadowPipeline` no longer accepts caller-controlled `now` or `clock`. Supplying either causes `CALLER_TIME_DENIED` before any trust decision or external security I/O.
-
-Production time is obtained from an internally captured clock path. Identity expiry, matter-authorisation freshness, provider validity, HSM/DLP/network attestations, socket preparation expiry, final synchronous pre-send authorisation and evidence timestamps therefore cannot be backdated by the pipeline caller.
+`runGcpMandateShadowPipeline` no longer accepts caller-controlled `now` or `clock`. Supplying either causes `CALLER_TIME_DENIED` before any trust decision or external security I/O. Production freshness and the final synchronous pre-send authorisation use internally controlled time.
 
 ### AUD-P1-40 — DLP project/location were not fully part of configuration identity — CLOSED
-Production DLP remains fixed to the Google Sensitive Data Protection EU location and must execute in the same protected GCP project as the gateway. Audit v11 additionally includes the exact `project_id` and `location` in the deployment-pinned DLP configuration fingerprint. The signed DLP attestation carries scanner project, location, version and configuration fingerprint. A scanner in another project or in `us`/`global` cannot satisfy the production configuration identity.
+Production DLP remains fixed to the Google Sensitive Data Protection EU location and must execute in the same protected GCP project as the gateway. The exact `project_id` and `location` are included in the deployment-pinned DLP configuration fingerprint, and the signed DLP attestation carries scanner project, location, version and configuration fingerprint.
 
 ### AUD-P1-41 — provider routing could read the signed passport before verification — CLOSED PROACTIVELY
-Before selecting network profile, region-specific target URL or use-case routing, the production pipeline verifies the provider passport against rooted trust and the active policy version. Routing uses only the verified immutable passport snapshot. The later full Legal Egress gate independently verifies the same signed provider evidence again at decision time.
+Before selecting network profile, region-specific target URL or use-case routing, the production pipeline verifies the provider passport against rooted trust and the active policy version. Routing uses only the verified immutable passport snapshot; the later Legal Egress gate independently re-verifies provider evidence.
 
 ## Earlier engineering findings — still closed and regression-covered
 
@@ -73,7 +69,7 @@ Before selecting network profile, region-specific target URL or use-case routing
 - DNS poisoning, redirects, socket substitution, target-path substitution and replay fail closed;
 - final full Legal Egress authorisation is synchronous and immediately precedes request submission;
 - production DNS/TLS/HTTPS implementations are not caller-injectable;
-- runtime identity derives from the local GCE metadata endpoint and is cross-checked to exact Compute instance ID/name, zone, VPC, subnet, NIC and service account;
+- runtime identity derives from local GCE metadata and is cross-checked to exact Compute instance ID/name, zone, VPC, subnet, NIC and service account;
 - exact effective-firewall views required; malformed classic/policy rules and policy rules without `match` fail closed;
 - IPv4-only private workload with no external IPv4/IPv6;
 - deny-all egress except restricted Google API VIP TCP/443;
@@ -87,27 +83,27 @@ Before selecting network profile, region-specific target URL or use-case routing
 
 ## Dedicated mandate-shadow engineering path
 
-1. require a production runtime state and internally verified rooted key trust;
+1. require production runtime state and internally verified rooted key trust;
 2. reject caller-supplied production time and obtain an internal production timestamp;
 3. require exact production HSM/DLP/network/transport/WORM adapter instances;
 4. require DLP EU location and exact DLP project = protected gateway project before mandate-data inspection;
 5. normalise the entire request to one strict frozen JSON snapshot;
 6. verify the provider passport before routing and use only its immutable verified snapshot;
-7. verify the active release, policy, approved target and project/location-bound DLP configuration;
+7. verify active release, policy, approved target and project/location-bound DLP configuration;
 8. verify four distinct Cloud HSM key postures;
-9. DLP-scan the exact frozen mandate payload and HSM-sign its exact fingerprint/project/location/config evidence;
+9. DLP-scan the exact frozen mandate payload and HSM-sign exact fingerprint/project/location/config evidence;
 10. collect local GCE runtime identity and cross-check exact workload, VPC, subnet, NIC and service account;
 11. validate global/regional/workload effective-firewall views and exact VPC-SC posture;
 12. HSM-sign release-bound egress-enforcement evidence;
 13. build the fixed proposal-only Vertex request from the same frozen payload;
-14. prepare and HSM-attest the exact approved target URL, exact request bytes and actual restricted-VIP TLS socket;
+14. prepare and HSM-attest exact approved target URL, exact request bytes and actual restricted-VIP TLS socket;
 15. execute deterministic Legal Egress authorisation using verified immutable signed-envelope snapshots;
 16. obtain the provider credential;
-17. synchronously read internally controlled fresh time and execute the complete Legal Egress authorisation as the final gate;
-18. with no async boundary, send the exact prepared bytes over the one-shot attested socket;
+17. synchronously read internally controlled fresh time and execute complete Legal Egress authorisation as the final gate;
+18. with no async boundary, send exact prepared bytes over the one-shot attested socket;
 19. validate the response as a non-executable proposal;
-20. build, HSM-sign and verify the evidence manifest against actual artifact bytes;
-21. commit artifacts immutably to the locked WORM namespace, with the signed manifest written last as the commit marker;
+20. build, HSM-sign and verify evidence manifest against actual artifact bytes;
+21. commit artifacts immutably to the locked WORM namespace, signed manifest last as commit marker;
 22. only then may the engineering pipeline return `CANDIDATE`.
 
 This is **engineering proof**. It does not prove that a live Bao deployment currently satisfies these controls.
@@ -158,7 +154,7 @@ Audit v11 requires: Engineering PASS; production actions physically blocked; exa
 | Target | Re-audit v11 verdict |
 |---|---|
 | Repository engineering implementation at verified code head | **PASS** |
-| Final documented exact-head benchmark | **PENDING CI/DOGFOOD + CODEX EXACT-HEAD VERDICT** |
+| Final documented exact-head benchmark | **REQUIRES SAME-SHA CI + DOGFOOD + CODEX VERDICT** |
 | Known P0/P1 findings through delayed Codex review 5094888004 | **CLOSED + REGRESSION COVERED** |
 | Signed-envelope snapshot / Proxy / post-verification mutation boundary | **PASS AS ENGINEERING PROOF** |
 | Internally controlled production freshness clock | **PASS AS ENGINEERING PROOF** |
