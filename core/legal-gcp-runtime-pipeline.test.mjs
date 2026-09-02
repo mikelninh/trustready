@@ -54,7 +54,7 @@ const safePayload = { subject_hash: `sha256:${'b'.repeat(64)}`, body_excerpt: 'P
 function provider() {
   return signProviderPassport({
     body: {
-      provider_id: 'vertex-eu', status: 'approved', valid_until: '2026-12-31T00:00:00Z', training_on_customer_data: false,
+      policy_version: 'legal-v4', provider_id: 'vertex-eu', status: 'approved', valid_until: '2026-12-31T00:00:00Z', training_on_customer_data: false,
       avv_status: 'approved', brao_43e_status: 'approved', subprocessor_status: 'approved', third_country: false,
       use_cases: {
         summarise_mail: {
