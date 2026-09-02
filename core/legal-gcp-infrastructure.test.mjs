@@ -4,7 +4,7 @@ import crypto from 'node:crypto'
 import { canonicalize, createKeyTrustStore, signEnvelopeWithSigner, verifyEnvelope } from './legal-key-identity.mjs'
 import { createGoogleCloudHsmSigner, evaluateCloudHsmKeyPosture } from './legal-gcp-hsm.mjs'
 import { createGoogleSensitiveDataScanner, legalDlpConfigFingerprint, parseDlpInspectResponse } from './legal-gcp-dlp.mjs'
-import { evaluateGcpNetworkPosture } from './legal-gcp-network-enforcement.mjs'
+import { createGcpNetworkPostureCollector, evaluateGcpNetworkPosture } from './legal-gcp-network-enforcement.mjs'
 import { createGcsWormEvidenceStore, evaluateBucketLockPosture } from './legal-gcp-worm.mjs'
 import { qualifyGcpLegalInfrastructure } from './legal-gcp-qualification.mjs'
 
@@ -82,33 +82,80 @@ test('Sensitive Data Protection scanner pins config and fails closed on malforme
 
 const NETWORK = 'https://www.googleapis.com/compute/v1/projects/trustready-prod/global/networks/legal'
 const SUBNET = 'https://www.googleapis.com/compute/v1/projects/trustready-prod/regions/europe-west3/subnetworks/legal'
+const FIREWALLS = [
+  { name: 'allow-restricted-googleapis', network: NETWORK, direction: 'EGRESS', priority: 1000, destinationRanges: ['199.36.153.4/30'], allowed: [{ IPProtocol: 'tcp', ports: ['443'] }] },
+  { name: 'deny-all-egress', network: NETWORK, direction: 'EGRESS', priority: 2000, destinationRanges: ['0.0.0.0/0'], denied: [{ IPProtocol: 'all' }] },
+]
+function effective() { return { firewalls: structuredClone(FIREWALLS), firewallPolicys: [] } }
 function goodNetwork() {
   return {
-    firewalls: { items: [
-      { name: 'allow-restricted-googleapis', network: NETWORK, direction: 'EGRESS', priority: 1000, destinationRanges: ['199.36.153.4/30'], allowed: [{ IPProtocol: 'tcp', ports: ['443'] }] },
-      { name: 'deny-all-egress', network: NETWORK, direction: 'EGRESS', priority: 2000, destinationRanges: ['0.0.0.0/0'], denied: [{ IPProtocol: 'all' }] },
-    ] },
-    subnetwork: { network: NETWORK, selfLink: SUBNET, privateIpGoogleAccess: true },
-    instances: { items: { 'zones/europe-west3-a': { instances: [{ name: 'bao-shadow', networkInterfaces: [{ network: NETWORK, subnetwork: SUBNET, accessConfigs: [] }] }] } } },
+    effective_firewalls: effective(),
+    regional_effective_firewalls: effective(),
+    workload_effective_firewalls: effective(),
+    subnetwork: { network: NETWORK, selfLink: SUBNET, privateIpGoogleAccess: true, stackType: 'IPV4_ONLY' },
+    workload: { name: 'bao-shadow', zone: 'https://www.googleapis.com/compute/v1/projects/trustready-prod/zones/europe-west3-a', networkInterfaces: [{ name: 'nic0', network: NETWORK, subnetwork: SUBNET, accessConfigs: [], ipv6AccessConfigs: [], stackType: 'IPV4_ONLY' }] },
+    expected_workload: { name: 'bao-shadow', zone: 'europe-west3-a', nic: 'nic0' },
     perimeter: { name: 'accessPolicies/1/servicePerimeters/legal', status: { resources: ['projects/123'], restrictedServices: ['aiplatform.googleapis.com', 'storage.googleapis.com', 'dlp.googleapis.com', 'cloudkms.googleapis.com'], vpcAccessibleServices: { enableRestriction: true, allowedServices: ['RESTRICTED-SERVICES'] } } },
     protected_resource: 'projects/123',
   }
 }
 
-test('network enforcement is scoped to exact VPC and rejects selectors, escapes and public IPs', () => {
-  assert.equal(evaluateGcpNetworkPosture(goodNetwork()).ready, true)
-  const broad = goodNetwork(); broad.firewalls.items.unshift({ name: 'oops', network: NETWORK, direction: 'EGRESS', priority: 500, destinationRanges: ['0.0.0.0/0'], allowed: [{ IPProtocol: 'tcp', ports: ['443'] }] })
+test('network enforcement is bound to exact workload effective policy layers and IPv4-only posture', () => {
+  const good = evaluateGcpNetworkPosture(goodNetwork())
+  assert.equal(good.ready, true)
+  assert.equal(good.protected_workload, 'bao-shadow')
+  assert.equal(good.effective_policy_layers_checked, true)
+
+  const broad = goodNetwork(); broad.effective_firewalls.firewalls.unshift({ name: 'oops', network: NETWORK, direction: 'EGRESS', priority: 500, destinationRanges: ['0.0.0.0/0'], allowed: [{ IPProtocol: 'tcp', ports: ['443'] }] })
   assert.equal(evaluateGcpNetworkPosture(broad).ready, false)
-  const wrongVpc = goodNetwork(); wrongVpc.firewalls.items = wrongVpc.firewalls.items.map((rule) => ({ ...rule, network: `${NETWORK}-other` }))
+  const wrongVpc = goodNetwork(); wrongVpc.effective_firewalls.firewalls = wrongVpc.effective_firewalls.firewalls.map((rule) => ({ ...rule, network: `${NETWORK}-other` }))
   assert.equal(evaluateGcpNetworkPosture(wrongVpc).ready, false)
-  const targeted = goodNetwork(); targeted.firewalls.items[1].targetServiceAccounts = ['only-one@project.iam.gserviceaccount.com']
+  const targeted = goodNetwork(); targeted.effective_firewalls.firewalls[1].targetServiceAccounts = ['only-one@project.iam.gserviceaccount.com']
   assert.equal(evaluateGcpNetworkPosture(targeted).ready, false)
-  const publicIp = goodNetwork(); publicIp.instances.items['zones/europe-west3-a'].instances[0].networkInterfaces[0].accessConfigs = [{ natIP: '1.2.3.4' }]
+
+  const hierarchy = goodNetwork(); hierarchy.effective_firewalls.firewallPolicys = [{ type: 'HIERARCHY', name: 'org-policy', rules: [{ priority: 100, direction: 'EGRESS', action: 'allow', match: { destIpRanges: ['0.0.0.0/0'] } }] }]
+  assert.equal(evaluateGcpNetworkPosture(hierarchy).ready, false)
+  const regionalPolicy = goodNetwork(); regionalPolicy.regional_effective_firewalls.firewallPolicys = [{ type: 'NETWORK_REGIONAL', name: 'region-policy', rules: [{ priority: 100, direction: 'EGRESS', action: 'allow' }] }]
+  assert.equal(evaluateGcpNetworkPosture(regionalPolicy).ready, false)
+  const systemAllow = goodNetwork(); systemAllow.workload_effective_firewalls.firewallPolicys = [{ type: 'SYSTEM_GLOBAL', name: 'system', rules: [{ priority: 1, direction: 'EGRESS', action: 'allow' }] }]
+  assert.equal(evaluateGcpNetworkPosture(systemAllow).ready, false)
+
+  const wrongWorkload = goodNetwork(); wrongWorkload.workload.name = 'unrelated-vm'
+  assert.equal(evaluateGcpNetworkPosture(wrongWorkload).ready, false)
+  const extraNic = goodNetwork(); extraNic.workload.networkInterfaces.push({ name: 'nic1', network: `${NETWORK}-other`, stackType: 'IPV4_ONLY' })
+  assert.equal(evaluateGcpNetworkPosture(extraNic).ready, false)
+  const publicIp = goodNetwork(); publicIp.workload.networkInterfaces[0].accessConfigs = [{ natIP: '1.2.3.4' }]
   assert.equal(evaluateGcpNetworkPosture(publicIp).ready, false)
+  const publicIpv6 = goodNetwork(); publicIpv6.workload.networkInterfaces[0].ipv6AccessConfigs = [{ externalIpv6: '2001:db8::1' }]
+  assert.equal(evaluateGcpNetworkPosture(publicIpv6).ready, false)
+  const dualStack = goodNetwork(); dualStack.subnetwork.stackType = 'IPV4_IPV6'; dualStack.workload.networkInterfaces[0].stackType = 'IPV4_IPV6'
+  assert.equal(evaluateGcpNetworkPosture(dualStack).ready, false)
   const dry = goodNetwork(); dry.perimeter.useExplicitDryRunSpec = true
   assert.equal(evaluateGcpNetworkPosture(dry).ready, false)
   const escape = goodNetwork(); escape.perimeter.status.egressPolicies = [{ egressTo: { resources: ['*'] } }]
   assert.equal(evaluateGcpNetworkPosture(escape).ready, false)
+})
+
+test('network collector fetches effective global regional and exact workload NIC firewall views', async () => {
+  const fixture = goodNetwork()
+  const calls = []
+  const fetch_impl = async (url) => {
+    calls.push(url)
+    if (url.includes('/regions/europe-west3/subnetworks/legal')) return jsonResponse(fixture.subnetwork)
+    if (url.includes('accesscontextmanager.googleapis.com')) return jsonResponse(fixture.perimeter)
+    if (url.includes('cloudresourcemanager.googleapis.com')) return jsonResponse({ projectId: 'trustready-prod', name: 'projects/123' })
+    if (url.includes('/global/networks/legal/getEffectiveFirewalls')) return jsonResponse(fixture.effective_firewalls)
+    if (url.includes('/regions/europe-west3/firewallPolicies/getEffectiveFirewalls')) return jsonResponse(fixture.regional_effective_firewalls)
+    if (url.includes('/instances/bao-shadow/getEffectiveFirewalls')) return jsonResponse(fixture.workload_effective_firewalls)
+    if (url.includes('/instances/bao-shadow')) return jsonResponse(fixture.workload)
+    return jsonResponse({}, 404)
+  }
+  const collector = createGcpNetworkPostureCollector({ project_id: 'trustready-prod', region: 'europe-west3', subnetwork: 'legal', service_perimeter_name: 'accessPolicies/1/servicePerimeters/legal', workload_zone: 'europe-west3-a', workload_instance: 'bao-shadow', workload_nic: 'nic0', fetch_impl, token_provider: token })
+  const posture = await collector.collect()
+  assert.equal(posture.ready, true)
+  assert.ok(calls.some((url) => url.includes('/global/networks/legal/getEffectiveFirewalls')))
+  assert.ok(calls.some((url) => url.includes('/regions/europe-west3/firewallPolicies/getEffectiveFirewalls')))
+  assert.ok(calls.some((url) => url.includes('/instances/bao-shadow/getEffectiveFirewalls')))
 })
 
 test('WORM posture requires permanently locked retention, uniform access and public-access prevention', async () => {
@@ -134,7 +181,7 @@ function qualificationSigners() { return { dlp: qualificationSigner('dlp'), egre
 test('end-to-end qualification requires four purpose-separated HSM CryptoKeys plus DLP network and WORM proof', async () => {
   let scans = 0
   const dlp_scanner = { async inspect() { scans++; return scans === 1 ? { safe: true, payload_fingerprint: 'sha256:safe', scanner_id: 'gcp-sensitive-data-protection', scanner_version: 'google-sensitive-data-protection-v3', scanner_location: 'eu', scanner_config_fingerprint: DLP_CONFIG, detected_categories: [] } : { safe: false, payload_fingerprint: 'sha256:pii', scanner_id: 'gcp-sensitive-data-protection', scanner_version: 'google-sensitive-data-protection-v3', scanner_location: 'eu', scanner_config_fingerprint: DLP_CONFIG, detected_categories: ['EMAIL_ADDRESS', 'IBAN_CODE'] } } }
-  const network_collector = { async collect() { return { ready: true, deny_by_default: true, only_restricted_google_apis: true, provider: 'gcp-vpc-service-controls', restricted_vip: '199.36.153.4/30', perimeter_name: 'legal', protected_network: NETWORK, protected_resource: 'projects/123', deny_rule: 'deny-all', allow_rule: 'restricted-only' } } }
+  const network_collector = { async collect() { return { ready: true, deny_by_default: true, only_restricted_google_apis: true, provider: 'gcp-vpc-service-controls', restricted_vip: '199.36.153.4/30', perimeter_name: 'legal', protected_network: NETWORK, protected_subnetwork: SUBNET, protected_workload: 'bao-shadow', protected_workload_zone: 'europe-west3-a', protected_workload_nic: 'nic0', ipv4_only: true, effective_policy_layers_checked: true, protected_resource: 'projects/123', deny_rule: 'deny-all', allow_rule: 'restricted-only' } } }
   const worm_store = { async posture() { return { ready: true, retention_locked: true, provider: 'gcs-bucket-lock', bucket: 'evidence', retention_seconds: 2592000 } }, async append({ bytes }) { return { stored: true, bucket: 'evidence', object_name: 'proof', generation: '1', content_hash: `sha256:${crypto.createHash('sha256').update(bytes).digest('hex')}`, retention_expiration_time: '2026-10-02T12:00:00Z' } } }
   const result = await qualifyGcpLegalInfrastructure({ hsm_signers: qualificationSigners(), dlp_scanner, network_collector, worm_store, tenant_id: 'tenant-a', policy_version: 'legal-v4', release: 'r4', now: new Date('2026-09-02T12:00:00Z') })
   assert.equal(result.status, 'CANDIDATE')
