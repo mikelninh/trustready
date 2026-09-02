@@ -7,8 +7,16 @@ import { sha256, signEnvelopeWithSigner } from './legal-key-identity.mjs'
 
 const RESTRICTED_VIP = new Set(['199.36.153.4', '199.36.153.5', '199.36.153.6', '199.36.153.7'])
 const TRANSPORT_BRAND = Symbol('trustready.restricted-google-api-transport')
+const TEST_ONLY_TRANSPORT_BRAND = Symbol('trustready.test-only-restricted-google-api-transport')
 const PREPARED_BRAND = Symbol('trustready.prepared-restricted-request')
 const PREPARED_STATE = new WeakMap()
+
+// Capture Node implementations once at module initialization. Production construction never
+// accepts caller-supplied DNS/TLS/HTTPS implementations. Test injection is isolated below.
+const NATIVE_RESOLVE4 = dns.resolve4.bind(dns)
+const NATIVE_TLS_CONNECT = tls.connect.bind(tls)
+const NATIVE_HTTPS_REQUEST = https.request.bind(https)
+const NATIVE_HTTPS_AGENT = https.Agent
 
 function endpointUrl(endpoint) {
   let url
@@ -35,6 +43,12 @@ function synchronousClock(clock) {
   try { value = clock() } catch { return null }
   if (value && typeof value.then === 'function') return null
   return validDate(value)
+}
+function testRuntime() { return process.env.NODE_ENV === 'test' }
+function trustedTransport(transport) {
+  if (transport?.[TRANSPORT_BRAND] !== true) return false
+  if (transport?.[TEST_ONLY_TRANSPORT_BRAND] === true && !testRuntime()) return false
+  return true
 }
 
 function openTls({ address, hostname, tls_connect, timeout_ms }) {
@@ -71,7 +85,7 @@ function openTls({ address, hostname, tls_connect, timeout_ms }) {
 }
 
 function oneShotPreparedAgent(socket) {
-  const agent = new https.Agent({ keepAlive: false, maxSockets: 1, maxFreeSockets: 0 })
+  const agent = new NATIVE_HTTPS_AGENT({ keepAlive: false, maxSockets: 1, maxFreeSockets: 0 })
   let issued = false
   agent.createConnection = (_options, callback) => {
     if (issued || socket?.destroyed === true) {
@@ -86,21 +100,34 @@ function oneShotPreparedAgent(socket) {
   return agent
 }
 
-export function createRestrictedGoogleApiTransport({ signer, resolve4 = dns.resolve4, tls_connect = tls.connect, https_request = https.request, timeout_ms = 5000, max_request_bytes = 1024 * 1024, max_response_bytes = 2 * 1024 * 1024 }) {
+function buildTransport({ signer, resolve4, tls_connect, https_request, timeout_ms, max_request_bytes, max_response_bytes, test_only }) {
   if (!signer || signer.hardware_backed !== true || typeof signer.sign !== 'function' || typeof signer.posture !== 'function') throw new TypeError('hardware-backed network signer required')
   if (typeof resolve4 !== 'function' || typeof tls_connect !== 'function' || typeof https_request !== 'function') throw new TypeError('restricted transport dependencies required')
-  return Object.freeze({ [TRANSPORT_BRAND]: true, signer, resolve4, tls_connect, https_request, timeout_ms, max_request_bytes, max_response_bytes })
+  return Object.freeze({
+    [TRANSPORT_BRAND]: true,
+    ...(test_only ? { [TEST_ONLY_TRANSPORT_BRAND]: true } : {}),
+    signer, resolve4, tls_connect, https_request, timeout_ms, max_request_bytes, max_response_bytes,
+  })
+}
+
+export function createRestrictedGoogleApiTransport({ signer, timeout_ms = 5000, max_request_bytes = 1024 * 1024, max_response_bytes = 2 * 1024 * 1024 }) {
+  return buildTransport({ signer, resolve4: NATIVE_RESOLVE4, tls_connect: NATIVE_TLS_CONNECT, https_request: NATIVE_HTTPS_REQUEST, timeout_ms, max_request_bytes, max_response_bytes, test_only: false })
+}
+
+export function createRestrictedGoogleApiTransportForTest({ signer, resolve4, tls_connect, https_request, timeout_ms = 5000, max_request_bytes = 1024 * 1024, max_response_bytes = 2 * 1024 * 1024 }) {
+  if (!testRuntime()) throw new TypeError('custom restricted transport dependencies are test-only')
+  return buildTransport({ signer, resolve4, tls_connect, https_request, timeout_ms, max_request_bytes, max_response_bytes, test_only: true })
 }
 
 export async function restrictedTransportPosture(transport) {
-  if (transport?.[TRANSPORT_BRAND] !== true) return { ready: false, reason: 'untrusted restricted transport' }
+  if (!trustedTransport(transport)) return { ready: false, reason: 'untrusted restricted transport' }
   const posture = await transport.signer.posture()
   if (!posture?.ready || posture.protection_level !== 'HSM' || posture.algorithm !== 'EC_SIGN_P256_SHA256' || !posture.key_version_name) return { ready: false, reason: 'network transport signer HSM posture invalid' }
   return posture
 }
 
 export async function prepareRestrictedGoogleApiRequest({ transport, endpoint, body, region, now = new Date() }) {
-  if (transport?.[TRANSPORT_BRAND] !== true) return { ready: false, reason: 'untrusted restricted transport' }
+  if (!trustedTransport(transport)) return { ready: false, reason: 'untrusted restricted transport' }
   const observedAt = validDate(now)
   if (!observedAt) return { ready: false, reason: 'valid preparation time required' }
   const url = endpointUrl(endpoint)
@@ -145,7 +172,7 @@ export function cancelPreparedGoogleApiRequest(prepared) {
 
 export async function sendPreparedGoogleApiRequest({ transport, prepared, headers = {}, clock = () => new Date(), before_send = null }) {
   const state = prepared?.[PREPARED_BRAND] === true ? PREPARED_STATE.get(prepared) : null
-  if (transport?.[TRANSPORT_BRAND] !== true || !state || state.transport !== transport || state.used === true) return { ok: false, reason: 'prepared restricted request invalid or already consumed' }
+  if (!trustedTransport(transport) || !state || state.transport !== transport || state.used === true) return { ok: false, reason: 'prepared restricted request invalid or already consumed' }
   for (const [name, value] of Object.entries(headers)) if (!safeHeader(name, value)) { cancelPreparedGoogleApiRequest(prepared); return { ok: false, reason: 'unsafe outbound header denied' } }
 
   // Critical send section: the final clock read and full authorization gate MUST be synchronous.
