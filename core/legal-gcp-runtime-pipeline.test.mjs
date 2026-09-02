@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import crypto from 'node:crypto'
-import { canonicalize, createRootedKeyTrustStore, issueIdentityAssertion, issueMatterAuthorization, publicKeyFingerprint, signEnvelope, signEnvelopeWithSigner, signKeyring, sha256 } from './legal-key-identity.mjs'
+import { canonicalize, createRootedKeyTrustStore, issueIdentityAssertion, issueMatterAuthorization, publicKeyFingerprint, signEnvelopeWithSigner, signKeyring, sha256 } from './legal-key-identity.mjs'
 import { signProviderPassport } from './legal-runtime-fortress.mjs'
 import { runGcpMandateShadowPipeline } from './legal-gcp-runtime-pipeline.mjs'
 
@@ -60,8 +60,7 @@ function provider() {
         summarise_mail: {
           allowed_zones: ['MANDATE'], regions: ['europe-west3'], max_retention_minutes: 0,
           allowed_fields: ['subject_hash', 'body_excerpt'], allowed_sensitive_keys: [], max_payload_bytes: 4096,
-          endpoints: { 'europe-west3': ['https://europe-west3-aiplatform.googleapis.com'] },
-          network_profile: 'gcp-restricted-googleapis',
+          endpoints: { 'europe-west3': ['https://europe-west3-aiplatform.googleapis.com'] }, network_profile: 'gcp-restricted-googleapis',
         },
       },
     }, private_key: reviewer.privateKey, key_id: 'review-1',
@@ -69,7 +68,7 @@ function provider() {
 }
 function request() { return { actor_session_id: 's1', tenant_id: 'tenant-a', matter_id: 'm1', matter_version: 'matter-v9', provider_id: 'vertex-eu', zone: 'MANDATE', use_case: 'summarise_mail', purpose: 'triage correspondence', policy_version: 'legal-v4', region: 'europe-west3', endpoint: 'https://europe-west3-aiplatform.googleapis.com/v1/projects/p/locations/europe-west3/publishers/google/models/gemini:generateContent', retention_minutes: 0, payload: safePayload } }
 const runtimeState = { production: true, external_ai_enabled: true, outbound_actions_enabled: false, policy_version: 'legal-v4', disabled_tenants: [], disabled_providers: [] }
-const dlpScanner = { async inspect({ payload }) { return { safe: true, findings_count: 0, detected_categories: [], payload_fingerprint: `sha256:${sha256(canonicalize(payload))}`, payload_bytes: Buffer.byteLength(canonicalize(payload)), scanner_id: 'gcp-sensitive-data-protection', scanner_location: 'eu' } } }
+const dlpScanner = { async inspect({ payload }) { return { safe: true, findings_count: 0, detected_categories: [], payload_fingerprint: `sha256:${sha256(canonicalize(payload))}`, payload_bytes: Buffer.byteLength(canonicalize(payload)), scanner_id: 'gcp-sensitive-data-protection', scanner_version: 'google-sensitive-data-protection-v2', scanner_location: 'eu' } } }
 const networkCollector = { async collect() { return { ready: true, provider: 'gcp-vpc-service-controls', deny_by_default: true, only_restricted_google_apis: true, restricted_vip: '199.36.153.4/30', perimeter_name: 'legal', protected_resource: 'projects/123', deny_rule: 'deny-all', allow_rule: 'restricted-only' } } }
 async function runtimeProbe({ endpoint, hostname, region, now }) { return signEnvelopeWithSigner({ body: { schema: 'trustready-network-attestation-v1', endpoint, hostname, region, tls: true, certificate_valid: true, redirected: false, route_class: 'restricted-googleapis', resolved_addresses: ['199.36.153.4'], peer_fingerprint: `sha256:${'c'.repeat(64)}`, observed_at: now.toISOString(), expires_at: new Date(now.getTime() + 30_000).toISOString() }, signer: networkSigner, purpose: 'network_attestation' }) }
 function wormStore({ fail = false } = {}) {
@@ -125,8 +124,7 @@ test('immutable evidence outage blocks CANDIDATE even after legal egress was all
 })
 
 test('provider without explicit restricted network profile cannot enter GCP production pipeline', async () => {
-  const p = provider(); p.body.use_cases.summarise_mail.network_profile = undefined
-  // Signature is now invalid as well, but profile gate should fail first and safely.
-  const result = await runGcpMandateShadowPipeline(base({ provider_passport: p }))
+  const passport = provider(); passport.body.use_cases.summarise_mail.network_profile = undefined
+  const result = await runGcpMandateShadowPipeline(base({ provider_passport: passport }))
   assert.equal(result.code, 'GCP_RESTRICTED_PROFILE_REQUIRED')
 })
