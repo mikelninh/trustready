@@ -5,6 +5,7 @@ import {verifyDlpAttestation} from './legal-content-guard.mjs'
 import {evaluateNetworkEgress,verifyEgressEnforcement} from './legal-network.mjs'
 
 const HIGH_RISK_ACTIONS=new Set(['send_email','bea_send','case_write','deadline_write','delete_document'])
+const DEPLOYMENT_MODES=new Set(['shadow','production'])
 function deny(code,reason,now=new Date(),extra={}){return{allowed:false,code,reason,decided_at:now.toISOString(),...extra}}
 function productionTrustReady(runtimeState,keyStore){return runtimeState?.production!==true||keyStore?.rooted===true}
 
@@ -38,7 +39,8 @@ export function authorizeLegalEgress({identity_assertion,matter_authorization,dl
   if(!state.allowed)return deny('KILL_SWITCH',state.reason,now)
   if(!productionTrustReady(runtime_state,key_store))return deny('ROOT_TRUST_REQUIRED','production requires a root-pinned signed keyring',now)
   if(!request.policy_version||runtime_state.policy_version!==request.policy_version)return deny('POLICY_VERSION_DENIED','active policy version mismatch',now)
-  const enforced=verifyEgressEnforcement({attestation:egress_enforcement_attestation,key_store,tenant_id:request.tenant_id,policy_version:request.policy_version,now})
+  if(runtime_state.production===true&&(!runtime_state.release||typeof runtime_state.release!=='string'))return deny('RELEASE_REQUIRED','production release identity required',now)
+  const enforced=verifyEgressEnforcement({attestation:egress_enforcement_attestation,key_store,tenant_id:request.tenant_id,policy_version:request.policy_version,release:runtime_state.release,now})
   if(!enforced.valid)return deny('EGRESS_ENFORCEMENT_DENIED',enforced.reason,now)
   const identity=verifyIdentityAssertion({assertion:identity_assertion,key_store,now})
   if(!identity.valid)return deny('IDENTITY_DENIED',identity.reason,now)
@@ -71,14 +73,15 @@ export function authorizeLegalEgress({identity_assertion,matter_authorization,dl
   if(!dlp.safe)return deny('DLP_DENIED','payload contains identifier/secret or violates parser limits',now,{finding_types:[...new Set(dlp.findings.map(f=>f.type))]})
   let dlpSigner=null,dlpScanner=null
   if(runtime_state.production===true&&ZONES[request.zone]>=ZONES.MANDATE){
-    const attested=verifyDlpAttestation({attestation:dlp_attestation,key_store,tenant_id:request.tenant_id,matter_id:request.matter_id,payload_fingerprint:dlp.fingerprint,policy_version:request.policy_version,now})
+    if(!runtime_state.dlp_config_fingerprint)return deny('DLP_CONFIG_REQUIRED','production DLP configuration fingerprint required',now)
+    const attested=verifyDlpAttestation({attestation:dlp_attestation,key_store,tenant_id:request.tenant_id,matter_id:request.matter_id,payload_fingerprint:dlp.fingerprint,policy_version:request.policy_version,scanner_config_fingerprint:runtime_state.dlp_config_fingerprint,now})
     if(!attested.valid)return deny('DLP_ATTESTATION_REQUIRED',attested.reason,now)
     dlpSigner=attested.signer_key_id
     dlpScanner=`${attested.scanner_id}@${attested.scanner_version}`
   }
-  const network=evaluateNetworkEgress({endpoint:request.endpoint,provider,use_case:request.use_case,region:request.region,network_probe,key_store,now})
+  const network=evaluateNetworkEgress({endpoint:request.endpoint,provider,use_case:request.use_case,region:request.region,network_probe,key_store,expected_request_fingerprint:request.transport_request_fingerprint||null,now})
   if(!network.allowed)return deny('NETWORK_DENIED',network.reason,now)
-  return{allowed:true,code:'ALLOW',decision_id:crypto.randomUUID(),decided_at:now.toISOString(),actor_id:identity.principal.subject,tenant_id:request.tenant_id,matter_id:request.matter_id||null,matter_version:request.matter_version||null,provider_id:request.provider_id,use_case:request.use_case,region:request.region,endpoint:network.endpoint,payload_fingerprint:dlp.fingerprint,payload_bytes:dlp.bytes,identity_signer:identity.signer_key_id,matter_auth_signer:matterAuthSigner,provider_signer:providerV.signer_key_id,dlp_signer:dlpSigner,dlp_scanner:dlpScanner,egress_enforcement_signer:enforced.signer_key_id,network_attestor:network.network_proof.attestor_key_id,peer_fingerprint:network.network_proof.peer_fingerprint}
+  return{allowed:true,code:'ALLOW',decision_id:crypto.randomUUID(),decided_at:now.toISOString(),actor_id:identity.principal.subject,tenant_id:request.tenant_id,matter_id:request.matter_id||null,matter_version:request.matter_version||null,provider_id:request.provider_id,use_case:request.use_case,region:request.region,endpoint:network.endpoint,payload_fingerprint:dlp.fingerprint,payload_bytes:dlp.bytes,transport_request_fingerprint:request.transport_request_fingerprint||null,release:runtime_state.release||null,identity_signer:identity.signer_key_id,matter_auth_signer:matterAuthSigner,provider_signer:providerV.signer_key_id,dlp_signer:dlpSigner,dlp_scanner:dlpScanner,dlp_config_fingerprint:runtime_state.dlp_config_fingerprint||null,egress_enforcement_signer:enforced.signer_key_id,network_attestor:network.network_proof.attestor_key_id,peer_fingerprint:network.network_proof.peer_fingerprint}
 }
 
 const HASH=/^sha256:[0-9a-f]{64}$/
@@ -133,6 +136,7 @@ export function issueActionApproval({identity_assertion,matter_authorization,key
 }
 
 export async function executeApprovedAction({capability,identity_assertion,matter_authorization,key_store,tenant_id,matter_id,action,payload,policy_version,runtime_state,deployment_mode='shadow',replay_store,action_handler,now=new Date()}){
+  if(!DEPLOYMENT_MODES.has(deployment_mode))return{executed:false,code:'DEPLOYMENT_MODE_DENIED',reason:'unknown deployment mode'}
   const state=evaluateRuntimeState({state:runtime_state,tenant_id,provider_id:'__actions__',action:true})
   if(!state.allowed)return{executed:false,code:'KILL_SWITCH',reason:state.reason}
   if(!productionTrustReady(runtime_state,key_store))return{executed:false,code:'ROOT_TRUST_REQUIRED',reason:'production requires root-pinned key trust'}
