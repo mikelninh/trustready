@@ -3,11 +3,6 @@ variable "project_id" {
   type        = string
 }
 
-variable "project_number" {
-  description = "Numeric GCP project number used by VPC Service Controls."
-  type        = string
-}
-
 variable "access_policy_id" {
   description = "Organization Access Context Manager policy ID. Required for an enforced VPC Service Controls perimeter."
   type        = string
