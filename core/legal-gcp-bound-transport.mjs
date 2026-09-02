@@ -9,6 +9,8 @@ import { isProductionGoogleCloudHsmSigner } from './legal-gcp-hsm.mjs'
 const RESTRICTED_VIP = new Set(['199.36.153.4', '199.36.153.5', '199.36.153.6', '199.36.153.7'])
 const TRANSPORT_BRAND = Symbol('trustready.restricted-google-api-transport')
 const TEST_ONLY_TRANSPORT_BRAND = Symbol('trustready.test-only-restricted-google-api-transport')
+const PRODUCTION_TRANSPORTS = new WeakSet()
+const TEST_TRANSPORTS = new WeakSet()
 const PREPARED_BRAND = Symbol('trustready.prepared-restricted-request')
 const PREPARED_STATE = new WeakMap()
 
@@ -43,13 +45,9 @@ function synchronousClock(clock) {
   if (value && typeof value.then === 'function') return null
   return validDate(value)
 }
-function trustedTransport(transport) { return transport?.[TRANSPORT_BRAND] === true }
-export function isProductionRestrictedGoogleApiTransport(transport) {
-  return trustedTransport(transport) && transport?.[TEST_ONLY_TRANSPORT_BRAND] !== true
-}
-export function isTestRestrictedGoogleApiTransport(transport) {
-  return trustedTransport(transport) && transport?.[TEST_ONLY_TRANSPORT_BRAND] === true
-}
+function trustedTransport(transport) { return PRODUCTION_TRANSPORTS.has(transport) || TEST_TRANSPORTS.has(transport) }
+export function isProductionRestrictedGoogleApiTransport(transport) { return PRODUCTION_TRANSPORTS.has(transport) }
+export function isTestRestrictedGoogleApiTransport(transport) { return TEST_TRANSPORTS.has(transport) }
 
 function openTls({ address, hostname, tls_connect, timeout_ms }) {
   return new Promise((resolve, reject) => {
@@ -97,11 +95,15 @@ function oneShotPreparedAgent(socket) {
 function buildTransport({ signer, resolve4, tls_connect, https_request, timeout_ms, max_request_bytes, max_response_bytes, test_only }) {
   if (!signer || signer.hardware_backed !== true || typeof signer.sign !== 'function' || typeof signer.posture !== 'function') throw new TypeError('hardware-backed network signer required')
   if (typeof resolve4 !== 'function' || typeof tls_connect !== 'function' || typeof https_request !== 'function') throw new TypeError('restricted transport dependencies required')
-  return Object.freeze({
+  const transport = {
     [TRANSPORT_BRAND]: true,
     ...(test_only ? { [TEST_ONLY_TRANSPORT_BRAND]: true } : {}),
     signer, resolve4, tls_connect, https_request, timeout_ms, max_request_bytes, max_response_bytes,
-  })
+  }
+  Object.freeze(transport)
+  if (test_only) TEST_TRANSPORTS.add(transport)
+  else PRODUCTION_TRANSPORTS.add(transport)
+  return transport
 }
 
 export function createRestrictedGoogleApiTransport({ signer, timeout_ms = 5000, max_request_bytes = 1024 * 1024, max_response_bytes = 2 * 1024 * 1024 }) {
@@ -192,7 +194,9 @@ export async function sendPreparedGoogleApiRequest({ transport, prepared, header
     let resolved = false
     const finish = (result) => { if (resolved) return; resolved = true; try { agent.destroy() } catch {}; resolve(result) }
     try {
-      req = transport.https_request(new URL(state.href), { method: 'POST', agent, headers: requestHeaders }, (res) => {
+      req = transport.https_request(new URL(state.href), {
+        method: 'POST', agent, headers: requestHeaders,
+      }, (res) => {
         if (res.socket !== state.socket || normalizeRemote(res.socket?.remoteAddress) !== state.connected_address) {
           closeSocket(state.socket)
           return finish({ ok: false, reason: 'HTTP request did not use attested TLS socket' })
