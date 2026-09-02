@@ -6,7 +6,7 @@
     }
   },
   "rewrites": [
-    { "source": "/legal", "destination": "/bao.html" },
+    { "source": "/legal", "destination": "/legal.html" },
     { "source": "/bao", "destination": "/bao.html" }
   ],
   "headers": [
@@ -15,6 +15,14 @@
       "headers": [
         { "key": "X-Content-Type-Options", "value": "nosniff" },
         { "key": "Referrer-Policy", "value": "no-referrer" }
+      ]
+    },
+    {
+      "source": "/legal.html",
+      "headers": [
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "Referrer-Policy", "value": "no-referrer" },
+        { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
       ]
     },
     {
