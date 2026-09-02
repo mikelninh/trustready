@@ -96,12 +96,16 @@ export function createGcsWormEvidenceStoreForTest({ bucket, fetch_impl, token_pr
   return buildStore({ bucket, fetch_impl, token_provider, min_retention_seconds, test_only: true })
 }
 
+function retentionSatisfiesFloor(receipt, now) {
+  if (!receipt?.retention_expiration_time) return false
+  const expiry = Date.parse(receipt.retention_expiration_time)
+  return !Number.isNaN(expiry) && expiry >= now.getTime() + PRODUCTION_WORM_MIN_RETENTION_SECONDS * 1000
+}
+
 export async function createSignedWormReceipt({ store, signer, object_name, bytes, tenant_id, policy_version, now = new Date() }) {
   const receipt = await store.append({ object_name, bytes })
   if (!receipt.stored) return { stored: false, receipt, attestation: null }
-  if (!receipt.retention_expiration_time) return { stored: false, receipt: { ...receipt, reason: 'retention expiration missing from object receipt' }, attestation: null }
-  const retentionExpiry = Date.parse(receipt.retention_expiration_time)
-  if (Number.isNaN(retentionExpiry) || retentionExpiry < now.getTime() + PRODUCTION_WORM_MIN_RETENTION_SECONDS * 1000) return { stored: false, receipt: { ...receipt, reason: 'retention expiration does not satisfy mandatory floor' }, attestation: null }
+  if (!retentionSatisfiesFloor(receipt, now)) return { stored: false, receipt: { ...receipt, reason: 'retention expiration does not satisfy mandatory floor' }, attestation: null }
   const body = {
     schema: 'trustready-worm-receipt-v2', tenant_id, policy_version, bucket: receipt.bucket, project_number: receipt.project_number,
     object_name: receipt.object_name, generation: receipt.generation, content_hash: receipt.content_hash,
@@ -110,12 +114,45 @@ export async function createSignedWormReceipt({ store, signer, object_name, byte
   return { stored: true, receipt, attestation: await signEnvelopeWithSigner({ body, signer, purpose: 'worm_receipt' }) }
 }
 
+function validBundleId(value) { return /^[A-Za-z0-9._:-]{1,128}$/.test(value || '') }
+
+export async function commitPreSendIntentToWorm({ store, signer, intent, tenant_id, policy_version, bundle_id, expected_bucket, expected_project_number, now = new Date() }) {
+  if (!store || !signer || !intent || typeof intent !== 'object' || Array.isArray(intent) || !tenant_id || !policy_version || !validBundleId(bundle_id)) {
+    throw new TypeError('complete pre-send intent context required')
+  }
+  if (!expected_bucket || !/^\d+$/.test(String(expected_project_number || ''))) throw new TypeError('expected WORM resource identity required')
+  const body = {
+    schema: 'trustready-pre-send-egress-intent-v1',
+    tenant_id,
+    policy_version,
+    bundle_id,
+    state: 'PREPARED_FOR_EGRESS_NOT_PROOF_OF_SEND',
+    recorded_at: now.toISOString(),
+    intent,
+  }
+  let signedIntent
+  try { signedIntent = await signEnvelopeWithSigner({ body, signer, purpose: 'egress_intent' }) }
+  catch (error) { return { committed: false, code: 'INTENT_SIGNING_FAILED', reason: error.message } }
+  const bytes = Buffer.from(canonicalize(signedIntent), 'utf8')
+  const tenantPath = sha256(tenant_id)
+  const objectName = `intents/${tenantPath}/${bundle_id}.json`
+  let receipt
+  try { receipt = await store.append({ object_name: objectName, bytes, content_type: 'application/json' }) }
+  catch (error) { return { committed: false, code: 'INTENT_WRITE_FAILED', reason: error.message } }
+  if (!receipt?.stored) return { committed: false, code: 'INTENT_WRITE_FAILED', reason: receipt?.reason || 'immutable pre-send intent write failed' }
+  if (receipt.bucket !== expected_bucket || String(receipt.project_number || '') !== String(expected_project_number)) return { committed: false, code: 'INTENT_RESOURCE_MISMATCH', reason: 'pre-send intent receipt resource identity mismatch' }
+  if (!retentionSatisfiesFloor(receipt, now)) return { committed: false, code: 'INTENT_RETENTION_FAILED', reason: 'pre-send intent retention does not satisfy mandatory floor' }
+  const expectedHash = `sha256:${sha256(bytes)}`
+  if (receipt.content_hash !== expectedHash) return { committed: false, code: 'INTENT_RECEIPT_MISMATCH', reason: 'pre-send intent receipt hash mismatch' }
+  return { committed: true, code: 'PRE_SEND_INTENT_COMMITTED', signed_intent: signedIntent, intent_hash: expectedHash, receipt }
+}
+
 function safeBundlePath(path) {
   return typeof path === 'string' && /^[A-Za-z0-9._/-]{1,256}$/.test(path) && !path.includes('..') && !path.startsWith('/') && !path.endsWith('/')
 }
 
 export async function commitEvidenceBundleToWorm({ store, signed_manifest, key_store, artifacts, bundle_id, now = new Date() }) {
-  if (!store || !signed_manifest || !key_store || !artifacts || !/^[A-Za-z0-9._:-]{1,128}$/.test(bundle_id || '')) throw new TypeError('verified WORM bundle context required')
+  if (!store || !signed_manifest || !key_store || !artifacts || !validBundleId(bundle_id)) throw new TypeError('verified WORM bundle context required')
   const verified = verifyEvidenceBundle({ signed_manifest, key_store, artifacts, now })
   if (!verified.valid) return { committed: false, code: 'BUNDLE_VERIFICATION_FAILED', reason: verified.reason }
   const paths = Object.keys(artifacts).sort()
@@ -127,16 +164,14 @@ export async function commitEvidenceBundleToWorm({ store, signed_manifest, key_s
     const bytes = Buffer.isBuffer(value) ? value : value instanceof Uint8Array ? Buffer.from(value) : typeof value === 'string' ? Buffer.from(value) : Buffer.from(canonicalize(value))
     const receipt = await store.append({ object_name: `bundles/${bundle_id}/artifacts/${path}`, bytes })
     if (!receipt?.stored || !receipt.retention_expiration_time) return { committed: false, code: 'ARTIFACT_WRITE_FAILED', failed_path: path, receipts }
-    const expiry = Date.parse(receipt.retention_expiration_time)
-    if (Number.isNaN(expiry) || expiry < now.getTime() + PRODUCTION_WORM_MIN_RETENTION_SECONDS * 1000) return { committed: false, code: 'ARTIFACT_RETENTION_FAILED', failed_path: path, receipts }
+    if (!retentionSatisfiesFloor(receipt, now)) return { committed: false, code: 'ARTIFACT_RETENTION_FAILED', failed_path: path, receipts }
     receipts.push(receipt)
   }
 
   const manifestBytes = Buffer.from(canonicalize(signed_manifest), 'utf8')
   const commitReceipt = await store.append({ object_name: `bundles/${bundle_id}/COMMITTED.manifest.json`, bytes: manifestBytes, content_type: 'application/json' })
   if (!commitReceipt?.stored || !commitReceipt.retention_expiration_time) return { committed: false, code: 'COMMIT_MARKER_WRITE_FAILED', receipts }
-  const commitExpiry = Date.parse(commitReceipt.retention_expiration_time)
-  if (Number.isNaN(commitExpiry) || commitExpiry < now.getTime() + PRODUCTION_WORM_MIN_RETENTION_SECONDS * 1000) return { committed: false, code: 'COMMIT_MARKER_RETENTION_FAILED', receipts }
+  if (!retentionSatisfiesFloor(commitReceipt, now)) return { committed: false, code: 'COMMIT_MARKER_RETENTION_FAILED', receipts }
   return {
     committed: true, code: 'WORM_BUNDLE_COMMITTED', bundle_id,
     manifest_hash: `sha256:${sha256(manifestBytes)}`, artifact_receipts: receipts, commit_receipt: commitReceipt,
