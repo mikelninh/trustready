@@ -1,6 +1,6 @@
 import {spawnSync} from 'node:child_process'
 import fs from 'node:fs'
-import {loadPinnedAssuranceFromEnv,verifiedClaim} from '../core/legal-assurance-evidence.mjs'
+import {loadPinnedAssuranceFromEnv,trustAnchorsDistinct,verifiedClaim} from '../core/legal-assurance-evidence.mjs'
 
 function run(command,args){
   const r=spawnSync(command,args,{encoding:'utf8',env:{...process.env,NO_COLOR:'1'}})
@@ -27,21 +27,22 @@ const regressionNames=[
   'network egress blocks wrong host, http, redirect, absent, unknown redirect or forged attestation',
   'stale provider passport is revoked by active policy version',
   'self-authored booleans and unsigned JSON cannot become audit evidence',
-  'attacker signature fails against pinned auditor key'
+  'attacker signature fails against pinned auditor key',
+  'runtime legal and independent assurance must use three distinct trust anchors'
 ]
 const regressionsPresent=regressionNames.every(name=>tests.stdout.includes(name))
 const now=new Date()
 
 const liveAssurance=loadPinnedAssuranceFromEnv({
-  evidence_env:'TRUSTREADY_LIVE_EVIDENCE',
-  key_env:'TRUSTREADY_LIVE_TRUST_KEY',
-  fingerprint_env:'TRUSTREADY_LIVE_TRUST_FINGERPRINT',
+  evidence_env:'TRUSTREADY_LIVE_EVIDENCE',key_env:'TRUSTREADY_LIVE_TRUST_KEY',fingerprint_env:'TRUSTREADY_LIVE_TRUST_FINGERPRINT',
   purpose:'live_qualification',now
 })
+const legalAssurance=loadPinnedAssuranceFromEnv({
+  evidence_env:'TRUSTREADY_LEGAL_EVIDENCE',key_env:'TRUSTREADY_LEGAL_TRUST_KEY',fingerprint_env:'TRUSTREADY_LEGAL_TRUST_FINGERPRINT',
+  purpose:'legal_privacy_assurance',now
+})
 const independentAssurance=loadPinnedAssuranceFromEnv({
-  evidence_env:'TRUSTREADY_INDEPENDENT_EVIDENCE',
-  key_env:'TRUSTREADY_INDEPENDENT_TRUST_KEY',
-  fingerprint_env:'TRUSTREADY_INDEPENDENT_TRUST_FINGERPRINT',
+  evidence_env:'TRUSTREADY_INDEPENDENT_EVIDENCE',key_env:'TRUSTREADY_INDEPENDENT_TRUST_KEY',fingerprint_env:'TRUSTREADY_INDEPENDENT_TRUST_FINGERPRINT',
   purpose:'independent_assurance',now
 })
 
@@ -50,21 +51,23 @@ const liveObserved=liveRequired.filter(k=>verifiedClaim(liveAssurance,k,{levels:
 const liveComplete=liveAssurance.valid&&liveObserved.length===liveRequired.length
 
 const legalRequired=['avv_dpa','brao_43e','subprocessors','transfer_assessment','vvt','dpia_dsfa','ai_act_classification','ai_literacy']
-const legalObserved=legalRequired.filter(k=>verifiedClaim(liveAssurance,k,{levels:['E4'],now}))
-const legalComplete=liveAssurance.valid&&legalObserved.length===legalRequired.length
+const legalObserved=legalRequired.filter(k=>verifiedClaim(legalAssurance,k,{levels:['E4'],now}))
+const legalComplete=legalAssurance.valid&&legalObserved.length===legalRequired.length
 
 const independentRequired=['independent_pentest','independent_legal_privacy_review','independent_evidence_verification']
 const independentObserved=independentRequired.filter(k=>verifiedClaim(independentAssurance,k,{levels:['E4'],now}))
-const independentComplete=independentAssurance.valid&&independentObserved.length===independentRequired.length
+const independentEvidenceComplete=independentAssurance.valid&&independentObserved.length===independentRequired.length
+const distinctTrustAnchors=trustAnchorsDistinct(liveAssurance,legalAssurance,independentAssurance)
+const independentComplete=independentEvidenceComplete&&distinctTrustAnchors
 
 const engineering=tests.ok&&fail===0&&filesPresent&&regressionsPresent&&benchmark.ok&&benchmarkJson?.release_gate?.false_verified_zero===true&&benchmarkJson?.release_gate?.verified_recall_complete===true&&benchmarkJson?.release_gate?.exact_status_complete===true&&benchmarkJson?.release_gate?.provenance_complete===true
 const report={
-  schema:'trustready-legal-preaudit-v2',
+  schema:'trustready-legal-preaudit-v3',
   generated_at:now.toISOString(),
   engineering:{status:engineering?'PASS':'FAIL',legal_tests:{pass,fail},regression_findings_closed:regressionsPresent,scanner:benchmarkJson?.metrics||null},
   live_runtime:{status:liveComplete?'PASS':'MISSING_EVIDENCE',assurance_signature_valid:liveAssurance.valid,trust_fingerprint:liveAssurance.valid?liveAssurance.trust_fingerprint:null,reason:liveAssurance.valid?null:liveAssurance.reason,required:liveRequired,observed:liveObserved},
-  legal_governance:{status:legalComplete?'PASS':'MISSING_EVIDENCE',assurance_signature_valid:liveAssurance.valid,required:legalRequired,observed:legalObserved},
-  independent_assurance:{status:independentComplete?'PASS':'MISSING_EVIDENCE',assurance_signature_valid:independentAssurance.valid,trust_fingerprint:independentAssurance.valid?independentAssurance.trust_fingerprint:null,reason:independentAssurance.valid?null:independentAssurance.reason,required:independentRequired,observed:independentObserved},
+  legal_governance:{status:legalComplete?'PASS':'MISSING_EVIDENCE',assurance_signature_valid:legalAssurance.valid,trust_fingerprint:legalAssurance.valid?legalAssurance.trust_fingerprint:null,reason:legalAssurance.valid?null:legalAssurance.reason,required:legalRequired,observed:legalObserved},
+  independent_assurance:{status:independentComplete?'PASS':'MISSING_EVIDENCE',assurance_signature_valid:independentAssurance.valid,trust_fingerprint:independentAssurance.valid?independentAssurance.trust_fingerprint:null,reason:independentAssurance.valid?null:independentAssurance.reason,required:independentRequired,observed:independentObserved,distinct_trust_anchors:distinctTrustAnchors},
   verdict:{
     pre_audit_ready:engineering,
     real_mandate_shadow_ready:engineering&&liveComplete&&legalComplete&&independentComplete,
@@ -74,7 +77,8 @@ const report={
 }
 if(!engineering)report.blockers.push('engineering or regression evidence failed')
 if(!liveComplete)report.blockers.push('cryptographically trusted live runtime operating evidence incomplete')
-if(!legalComplete)report.blockers.push('cryptographically trusted legal/privacy governance evidence incomplete')
-if(!independentComplete)report.blockers.push('separately signed independent penetration/legal/privacy/evidence verification incomplete')
+if(!legalComplete)report.blockers.push('separately signed legal/privacy governance evidence incomplete')
+if(!independentEvidenceComplete)report.blockers.push('separately signed independent penetration/legal/privacy/evidence verification incomplete')
+if(independentEvidenceComplete&&!distinctTrustAnchors)report.blockers.push('runtime, legal/privacy and independent assurance trust anchors must be distinct')
 console.log(JSON.stringify(report,null,2))
 process.exit(report.verdict.pre_audit_ready?0:1)
