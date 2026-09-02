@@ -31,12 +31,17 @@ async function request({ fetch_impl, token_provider, url, method = 'GET', body, 
 
 export function evaluateBucketLockPosture({ bucket, min_retention_seconds = PRODUCTION_WORM_MIN_RETENTION_SECONDS }) {
   if (!bucket?.name) return { ready: false, reason: 'bucket metadata missing' }
+  const projectNumber = String(bucket?.projectNumber || '')
+  if (!/^\d+$/.test(projectNumber)) return { ready: false, reason: 'bucket project identity missing' }
   if (bucket?.retentionPolicy?.isLocked !== true) return { ready: false, reason: 'bucket retention policy is not permanently locked' }
   const retention = Number(bucket?.retentionPolicy?.retentionPeriod)
   if (!Number.isFinite(retention) || retention < min_retention_seconds) return { ready: false, reason: 'bucket retention period is too short' }
   if (bucket?.iamConfiguration?.uniformBucketLevelAccess?.enabled !== true) return { ready: false, reason: 'uniform bucket-level access required' }
   if (bucket?.iamConfiguration?.publicAccessPrevention !== 'enforced') return { ready: false, reason: 'public access prevention must be enforced' }
-  return { ready: true, provider: 'gcs-bucket-lock', bucket: bucket.name, retention_seconds: retention, retention_locked: true, uniform_bucket_level_access: true, public_access_prevention: 'enforced' }
+  return {
+    ready: true, provider: 'gcs-bucket-lock', bucket: bucket.name, project_number: projectNumber,
+    retention_seconds: retention, retention_locked: true, uniform_bucket_level_access: true, public_access_prevention: 'enforced',
+  }
 }
 
 function buildStore({ bucket, fetch_impl, token_provider, min_retention_seconds, test_only }) {
@@ -66,7 +71,7 @@ function buildStore({ bucket, fetch_impl, token_provider, min_retention_seconds,
       try { metadata = await response.json() } catch { return { stored: false, reason: 'GCS write receipt invalid' } }
       if (metadata?.bucket !== bucket || metadata?.name !== object_name || !metadata?.generation) return { stored: false, reason: 'GCS write receipt invalid' }
       return {
-        stored: true, provider: 'gcs-bucket-lock', bucket, object_name,
+        stored: true, provider: 'gcs-bucket-lock', bucket, project_number: posture.project_number, object_name,
         generation: String(metadata.generation), metageneration: metadata.metageneration ? String(metadata.metageneration) : null,
         content_hash: `sha256:${sha256(buffer)}`, retention_expiration_time: metadata.retentionExpirationTime || null,
       }
@@ -78,13 +83,8 @@ function buildStore({ bucket, fetch_impl, token_provider, min_retention_seconds,
   return store
 }
 
-export function isProductionGcsWormEvidenceStore(store) {
-  return PRODUCTION_WORM_STORES.has(store)
-}
-
-export function isTestGcsWormEvidenceStore(store) {
-  return TEST_WORM_STORES.has(store)
-}
+export function isProductionGcsWormEvidenceStore(store) { return PRODUCTION_WORM_STORES.has(store) }
+export function isTestGcsWormEvidenceStore(store) { return TEST_WORM_STORES.has(store) }
 
 export function createGcsWormEvidenceStore({ bucket, token_provider, min_retention_seconds = PRODUCTION_WORM_MIN_RETENTION_SECONDS }) {
   if (typeof NATIVE_FETCH !== 'function') throw new TypeError('native fetch required for production GCS WORM store')
@@ -100,8 +100,10 @@ export async function createSignedWormReceipt({ store, signer, object_name, byte
   const receipt = await store.append({ object_name, bytes })
   if (!receipt.stored) return { stored: false, receipt, attestation: null }
   if (!receipt.retention_expiration_time) return { stored: false, receipt: { ...receipt, reason: 'retention expiration missing from object receipt' }, attestation: null }
+  const retentionExpiry = Date.parse(receipt.retention_expiration_time)
+  if (Number.isNaN(retentionExpiry) || retentionExpiry < now.getTime() + PRODUCTION_WORM_MIN_RETENTION_SECONDS * 1000) return { stored: false, receipt: { ...receipt, reason: 'retention expiration does not satisfy mandatory floor' }, attestation: null }
   const body = {
-    schema: 'trustready-worm-receipt-v1', tenant_id, policy_version, bucket: receipt.bucket,
+    schema: 'trustready-worm-receipt-v2', tenant_id, policy_version, bucket: receipt.bucket, project_number: receipt.project_number,
     object_name: receipt.object_name, generation: receipt.generation, content_hash: receipt.content_hash,
     retention_expiration_time: receipt.retention_expiration_time, stored_at: now.toISOString(),
   }
@@ -124,15 +126,17 @@ export async function commitEvidenceBundleToWorm({ store, signed_manifest, key_s
     const value = artifacts[path]
     const bytes = Buffer.isBuffer(value) ? value : value instanceof Uint8Array ? Buffer.from(value) : typeof value === 'string' ? Buffer.from(value) : Buffer.from(canonicalize(value))
     const receipt = await store.append({ object_name: `bundles/${bundle_id}/artifacts/${path}`, bytes })
-    if (!receipt?.stored || !receipt.retention_expiration_time) {
-      return { committed: false, code: 'ARTIFACT_WRITE_FAILED', failed_path: path, receipts }
-    }
+    if (!receipt?.stored || !receipt.retention_expiration_time) return { committed: false, code: 'ARTIFACT_WRITE_FAILED', failed_path: path, receipts }
+    const expiry = Date.parse(receipt.retention_expiration_time)
+    if (Number.isNaN(expiry) || expiry < now.getTime() + PRODUCTION_WORM_MIN_RETENTION_SECONDS * 1000) return { committed: false, code: 'ARTIFACT_RETENTION_FAILED', failed_path: path, receipts }
     receipts.push(receipt)
   }
 
   const manifestBytes = Buffer.from(canonicalize(signed_manifest), 'utf8')
   const commitReceipt = await store.append({ object_name: `bundles/${bundle_id}/COMMITTED.manifest.json`, bytes: manifestBytes, content_type: 'application/json' })
   if (!commitReceipt?.stored || !commitReceipt.retention_expiration_time) return { committed: false, code: 'COMMIT_MARKER_WRITE_FAILED', receipts }
+  const commitExpiry = Date.parse(commitReceipt.retention_expiration_time)
+  if (Number.isNaN(commitExpiry) || commitExpiry < now.getTime() + PRODUCTION_WORM_MIN_RETENTION_SECONDS * 1000) return { committed: false, code: 'COMMIT_MARKER_RETENTION_FAILED', receipts }
   return {
     committed: true, code: 'WORM_BUNDLE_COMMITTED', bundle_id,
     manifest_hash: `sha256:${sha256(manifestBytes)}`, artifact_receipts: receipts, commit_receipt: commitReceipt,
