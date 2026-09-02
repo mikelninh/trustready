@@ -64,7 +64,7 @@ const SERVICE_ACCOUNT = 'trustready-legal-gateway@trustready-prod.iam.gserviceac
 const APPROVED_SERVICES = ['accesscontextmanager.googleapis.com','aiplatform.googleapis.com','cloudkms.googleapis.com','cloudresourcemanager.googleapis.com','compute.googleapis.com','dlp.googleapis.com','storage.googleapis.com']
 const FIREWALLS = [{ name: 'allow-restricted-googleapis', network: NETWORK, direction: 'EGRESS', priority: 1000, destinationRanges: ['199.36.153.4/30'], allowed: [{ IPProtocol: 'tcp', ports: ['443'] }] },{ name: 'deny-all-egress', network: NETWORK, direction: 'EGRESS', priority: 2000, destinationRanges: ['0.0.0.0/0'], denied: [{ IPProtocol: 'all' }] }]
 function effective() { return { firewalls: structuredClone(FIREWALLS), firewallPolicys: [] } }
-function runtimeIdentity() { return { ready: true, provider: 'gce-local-metadata', metadata_flavor_verified: true, project_id: 'trustready-prod', instance_name: 'bao-shadow', instance_id: '987654321', zone: 'europe-west3-a', network_name: 'legal', subnetwork_name: 'legal', service_account_email: SERVICE_ACCOUNT } }
+function runtimeIdentity() { return { ready: true, provider: 'gce-local-metadata', metadata_flavor_verified: true, project_id: 'trustready-prod', instance_name: 'bao-shadow', instance_id: '987654321', zone: 'europe-west3-a', network_name: 'legal', subnetwork_name: 'legal', service_account_email: SERVICE_ACCOUNT, evidence_bucket: 'trustready-evidence' } }
 function goodNetwork() { return { effective_firewalls: effective(), regional_effective_firewalls: effective(), workload_effective_firewalls: effective(), subnetwork: { network: NETWORK, selfLink: SUBNET, privateIpGoogleAccess: true, stackType: 'IPV4_ONLY' }, workload: { id: '987654321', name: 'bao-shadow', zone: 'https://www.googleapis.com/compute/v1/projects/trustready-prod/zones/europe-west3-a', networkInterfaces: [{ name: 'nic0', network: NETWORK, subnetwork: SUBNET, accessConfigs: [], ipv6AccessConfigs: [], stackType: 'IPV4_ONLY' }], serviceAccounts: [{ email: SERVICE_ACCOUNT }] }, runtime_identity: runtimeIdentity(), perimeter: { name: 'accessPolicies/1/servicePerimeters/legal', status: { resources: ['projects/123'], restrictedServices: [...APPROVED_SERVICES], vpcAccessibleServices: { enableRestriction: true, allowedServices: ['RESTRICTED-SERVICES'] } } }, protected_resource: 'projects/123', project_id: 'trustready-prod', expected_nic: 'nic0' } }
 
 test('network enforcement is bound to exact workload effective policy layers and IPv4-only posture', () => {
@@ -75,7 +75,7 @@ test('network enforcement is bound to exact workload effective policy layers and
 })
 
 function metadataResponse(value) { return { ok: true, status: 200, headers: { get(name) { return name.toLowerCase() === 'metadata-flavor' ? 'Google' : null } }, async text() { return value } } }
-const metadata = { 'project/project-id': 'trustready-prod', 'instance/name': 'bao-shadow', 'instance/id': '987654321', 'instance/zone': 'projects/123/zones/europe-west3-a', 'instance/network-interfaces/0/network': 'projects/123/networks/legal', 'instance/network-interfaces/0/subnetwork': 'projects/123/regions/europe-west3/subnetworks/legal', 'instance/service-accounts/default/email': SERVICE_ACCOUNT }
+const metadata = { 'project/project-id': 'trustready-prod', 'instance/name': 'bao-shadow', 'instance/id': '987654321', 'instance/zone': 'projects/123/zones/europe-west3-a', 'instance/network-interfaces/0/network': 'projects/123/networks/legal', 'instance/network-interfaces/0/subnetwork': 'projects/123/regions/europe-west3/subnetworks/legal', 'instance/service-accounts/default/email': SERVICE_ACCOUNT, 'instance/attributes/trustready-evidence-bucket': 'trustready-evidence' }
 
 test('network test collector fetches exact runtime workload and policy views without becoming production collector', async () => {
   const fixture = goodNetwork(), calls = []
@@ -87,12 +87,12 @@ test('network test collector fetches exact runtime workload and policy views wit
 })
 
 test('WORM test store requires locked retention and immutable generation receipt', async () => {
-  const bucket = { name: 'trustready-evidence', retentionPolicy: { isLocked: true, retentionPeriod: String(31 * 24 * 60 * 60) }, iamConfiguration: { uniformBucketLevelAccess: { enabled: true }, publicAccessPrevention: 'enforced' } }
+  const bucket = { name: 'trustready-evidence', projectNumber: '123', retentionPolicy: { isLocked: true, retentionPeriod: String(31 * 24 * 60 * 60) }, iamConfiguration: { uniformBucketLevelAccess: { enabled: true }, publicAccessPrevention: 'enforced' } }
   assert.equal(evaluateBucketLockPosture({ bucket }).ready, true)
   const fetch_impl = async (url) => url.includes('/upload/') ? jsonResponse({ bucket: 'trustready-evidence', name: 'proof.json', generation: '1', retentionExpirationTime: '2026-10-03T00:00:00Z' }) : jsonResponse(bucket)
   const store = createGcsWormEvidenceStoreForTest({ bucket: 'trustready-evidence', fetch_impl, token_provider: token })
   const receipt = await store.append({ object_name: 'proof.json', bytes: Buffer.from('proof') })
-  assert.equal(receipt.stored, true); assert.match(receipt.content_hash, /^sha256:/)
+  assert.equal(receipt.stored, true); assert.equal(receipt.project_number, '123'); assert.match(receipt.content_hash, /^sha256:/)
 })
 
 test('infrastructure qualification rejects test and self-asserted adapters instead of issuing synthetic candidate', async () => {
@@ -101,6 +101,6 @@ test('infrastructure qualification rejects test and self-asserted adapters inste
   const runtime = createGceRuntimeIdentityProviderForTest({ fetch_impl: async (url) => metadataResponse(metadata[url.split('/computeMetadata/v1/')[1]]) })
   const network = createGcpNetworkPostureCollectorForTest({ project_id: 'trustready-prod', region: 'europe-west3', subnetwork: 'legal', service_perimeter_name: 'accessPolicies/1/servicePerimeters/legal', fetch_impl: async () => jsonResponse({}), token_provider: token, runtime_identity_provider: runtime })
   const worm = createGcsWormEvidenceStoreForTest({ bucket: 'trustready-evidence', fetch_impl: async () => jsonResponse({}), token_provider: token })
-  const result = await qualifyGcpLegalInfrastructure({ hsm_signers: { dlp: fakeHsm, egress: fakeHsm, network: fakeHsm, evidence: fakeHsm }, dlp_scanner: scanner, network_collector: network, worm_store: worm, tenant_id: 'tenant-a', policy_version: 'v11', release: 'r11', now: NOW })
+  const result = await qualifyGcpLegalInfrastructure({ hsm_signers: { dlp: fakeHsm, egress: fakeHsm, network: fakeHsm, evidence: fakeHsm }, dlp_scanner: scanner, network_collector: network, worm_store: worm, tenant_id: 'tenant-a', policy_version: 'v11', release: 'r11' })
   assert.equal(result.status, 'NOT_READY'); assert.equal(result.code, 'PRODUCTION_DLP_ADAPTER_REQUIRED')
 })
