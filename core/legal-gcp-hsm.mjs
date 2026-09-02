@@ -4,6 +4,8 @@ import { canonicalize, publicKeyFingerprint } from './legal-key-identity.mjs'
 const KEY_PATH = /^projects\/[^/]+\/locations\/([^/]+)\/keyRings\/[^/]+\/cryptoKeys\/[^/]+\/cryptoKeyVersions\/[^/]+$/
 const HSM_SIGNER_BRAND = Symbol('trustready.gcp-hsm-signer')
 const TEST_HSM_SIGNER_BRAND = Symbol('trustready.test-gcp-hsm-signer')
+const PRODUCTION_HSM_SIGNERS = new WeakSet()
+const TEST_HSM_SIGNERS = new WeakSet()
 const NATIVE_FETCH = typeof globalThis.fetch === 'function' ? globalThis.fetch.bind(globalThis) : null
 
 async function accessToken(tokenProvider) {
@@ -82,7 +84,7 @@ function buildGoogleCloudHsmSigner({ key_version_name, fetch_impl, token_provide
     return posture
   }
 
-  return Object.freeze({
+  const signer = {
     [HSM_SIGNER_BRAND]: true,
     ...(test_only ? { [TEST_HSM_SIGNER_BRAND]: true } : {}),
     backend: 'gcp-cloud-hsm',
@@ -108,15 +110,19 @@ function buildGoogleCloudHsmSigner({ key_version_name, fetch_impl, token_provide
         public_key_fingerprint: posture.public_key_fingerprint,
       }
     },
-  })
+  }
+  Object.freeze(signer)
+  if (test_only) TEST_HSM_SIGNERS.add(signer)
+  else PRODUCTION_HSM_SIGNERS.add(signer)
+  return signer
 }
 
 export function isProductionGoogleCloudHsmSigner(signer) {
-  return signer?.[HSM_SIGNER_BRAND] === true && signer?.[TEST_HSM_SIGNER_BRAND] !== true
+  return PRODUCTION_HSM_SIGNERS.has(signer)
 }
 
 export function isTestGoogleCloudHsmSigner(signer) {
-  return signer?.[HSM_SIGNER_BRAND] === true && signer?.[TEST_HSM_SIGNER_BRAND] === true
+  return TEST_HSM_SIGNERS.has(signer)
 }
 
 export function createGoogleCloudHsmSigner({ key_version_name, token_provider, allowed_locations = ['europe-west3', 'europe-west4', 'europe-west1'] }) {
