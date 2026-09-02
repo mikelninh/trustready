@@ -2,9 +2,17 @@ import { signEnvelopeWithSigner } from './legal-key-identity.mjs'
 import { createGceRuntimeIdentityProvider, isTrustedGceRuntimeIdentityProvider } from './legal-gcp-runtime-identity.mjs'
 
 const RESTRICTED_GOOGLE_VIP = '199.36.153.4/30'
-const REQUIRED_RESTRICTED_SERVICES = Object.freeze([
-  'aiplatform.googleapis.com', 'storage.googleapis.com', 'dlp.googleapis.com', 'cloudkms.googleapis.com',
+const APPROVED_RESTRICTED_SERVICES = Object.freeze([
+  'accesscontextmanager.googleapis.com',
+  'aiplatform.googleapis.com',
+  'cloudkms.googleapis.com',
+  'cloudresourcemanager.googleapis.com',
+  'compute.googleapis.com',
+  'dlp.googleapis.com',
+  'storage.googleapis.com',
 ])
+const DIRECTIONS = new Set(['INGRESS', 'EGRESS'])
+const POLICY_ACTIONS = new Set(['allow', 'deny', 'goto_next', 'apply_security_profile_group'])
 
 async function authToken(provider) {
   if (typeof provider !== 'function') throw new Error('GCP access token provider required')
@@ -30,6 +38,48 @@ function tail(value) {
   const parts = value.split('/').filter(Boolean)
   return parts.at(-1) || null
 }
+function stringArray(value) { return Array.isArray(value) && value.every((entry) => typeof entry === 'string' && entry.length > 0) }
+function optionalStringArray(object, key) { return !Object.hasOwn(object, key) || stringArray(object[key]) }
+function validLayer4Entries(entries) {
+  return Array.isArray(entries) && entries.length > 0 && entries.every((entry) => entry && typeof entry === 'object' && typeof entry.IPProtocol === 'string' && entry.IPProtocol.length > 0 && (!Object.hasOwn(entry, 'ports') || stringArray(entry.ports)))
+}
+function validPolicyLayer4(entries) {
+  return Array.isArray(entries) && entries.every((entry) => entry && typeof entry === 'object' && typeof entry.ipProtocol === 'string' && entry.ipProtocol.length > 0 && (!Object.hasOwn(entry, 'ports') || stringArray(entry.ports)))
+}
+
+function validClassicRule(rule) {
+  if (!rule || typeof rule !== 'object' || Array.isArray(rule)) return false
+  if (typeof rule.name !== 'string' || !rule.name || typeof rule.network !== 'string' || !rule.network) return false
+  if (!DIRECTIONS.has(rule.direction) || !Number.isInteger(rule.priority) || rule.priority < 0 || rule.priority > 65535) return false
+  if (Object.hasOwn(rule, 'disabled') && typeof rule.disabled !== 'boolean') return false
+  if (!optionalStringArray(rule, 'destinationRanges') || !optionalStringArray(rule, 'sourceRanges') || !optionalStringArray(rule, 'targetTags') || !optionalStringArray(rule, 'targetServiceAccounts')) return false
+  if (rule.direction === 'EGRESS' && (!Array.isArray(rule.destinationRanges) || rule.destinationRanges.length === 0)) return false
+  const hasAllowed = Object.hasOwn(rule, 'allowed')
+  const hasDenied = Object.hasOwn(rule, 'denied')
+  if (hasAllowed === hasDenied) return false
+  if (hasAllowed && !validLayer4Entries(rule.allowed)) return false
+  if (hasDenied && !validLayer4Entries(rule.denied)) return false
+  if (Object.hasOwn(rule, 'params')) {
+    if (!rule.params || typeof rule.params !== 'object' || Array.isArray(rule.params)) return false
+    if (Object.hasOwn(rule.params, 'resourceManagerTags') && (!rule.params.resourceManagerTags || typeof rule.params.resourceManagerTags !== 'object' || Array.isArray(rule.params.resourceManagerTags))) return false
+  }
+  return true
+}
+
+function validPolicyRule(rule) {
+  if (!rule || typeof rule !== 'object' || Array.isArray(rule)) return false
+  if (!Number.isInteger(rule.priority) || rule.priority < 0) return false
+  if (!DIRECTIONS.has(rule.direction)) return false
+  if (typeof rule.action !== 'string' || !POLICY_ACTIONS.has(rule.action.toLowerCase())) return false
+  if (Object.hasOwn(rule, 'disabled') && typeof rule.disabled !== 'boolean') return false
+  if (!optionalStringArray(rule, 'targetResources') || !optionalStringArray(rule, 'targetServiceAccounts')) return false
+  if (Object.hasOwn(rule, 'match')) {
+    if (!rule.match || typeof rule.match !== 'object' || Array.isArray(rule.match)) return false
+    if (!optionalStringArray(rule.match, 'destIpRanges') || !optionalStringArray(rule.match, 'srcIpRanges')) return false
+    if (Object.hasOwn(rule.match, 'layer4Configs') && !validPolicyLayer4(rule.match.layer4Configs)) return false
+  }
+  return true
+}
 
 function targetScoped(rule) {
   if (Array.isArray(rule?.targetTags) && rule.targetTags.length) return true
@@ -39,28 +89,29 @@ function targetScoped(rule) {
 }
 
 function isDenyAll(rule, protectedNetwork) {
-  return rule?.network === protectedNetwork && !targetScoped(rule) && rule?.direction === 'EGRESS' &&
-    Array.isArray(rule.destinationRanges) && rule.destinationRanges.includes('0.0.0.0/0') &&
-    Array.isArray(rule.denied) && rule.denied.some((entry) => entry?.IPProtocol === 'all') && rule.disabled !== true
+  return rule.network === protectedNetwork && !targetScoped(rule) && rule.direction === 'EGRESS' &&
+    rule.destinationRanges.includes('0.0.0.0/0') && rule.denied.some((entry) => entry.IPProtocol === 'all') && rule.disabled !== true
 }
 
 function isRestrictedVipAllow(rule, protectedNetwork) {
-  return rule?.network === protectedNetwork && !targetScoped(rule) && rule?.direction === 'EGRESS' &&
-    Array.isArray(rule.destinationRanges) && rule.destinationRanges.length === 1 && rule.destinationRanges[0] === RESTRICTED_GOOGLE_VIP &&
-    Array.isArray(rule.allowed) && rule.allowed.length === 1 && rule.allowed[0]?.IPProtocol === 'tcp' &&
-    Array.isArray(rule.allowed[0]?.ports) && rule.allowed[0].ports.length === 1 && rule.allowed[0].ports[0] === '443' && rule.disabled !== true
+  return rule.network === protectedNetwork && !targetScoped(rule) && rule.direction === 'EGRESS' &&
+    rule.destinationRanges.length === 1 && rule.destinationRanges[0] === RESTRICTED_GOOGLE_VIP &&
+    rule.allowed.length === 1 && rule.allowed[0].IPProtocol === 'tcp' &&
+    Array.isArray(rule.allowed[0].ports) && rule.allowed[0].ports.length === 1 && rule.allowed[0].ports[0] === '443' && rule.disabled !== true
 }
 
 function dangerousHigherPriorityAllow(rule, denyPriority, protectedNetwork) {
-  if (rule?.network !== protectedNetwork || rule?.direction !== 'EGRESS' || rule.disabled === true || !Array.isArray(rule.allowed) || !Number.isInteger(rule.priority)) return false
+  if (rule.network !== protectedNetwork || rule.direction !== 'EGRESS' || rule.disabled === true || !Array.isArray(rule.allowed)) return false
   if (rule.priority >= denyPriority) return false
   return !isRestrictedVipAllow(rule, protectedNetwork)
 }
 
 function effectiveShapeSafe(effective) {
-  if (!effective || typeof effective !== 'object' || !Array.isArray(effective.firewalls) || !Array.isArray(effective.firewallPolicys)) return { safe: false, reason: 'effective firewall response incomplete or malformed' }
+  if (!effective || typeof effective !== 'object' || Array.isArray(effective) || !Array.isArray(effective.firewalls) || !Array.isArray(effective.firewallPolicys)) return { safe: false, reason: 'effective firewall response incomplete or malformed' }
+  for (const rule of effective.firewalls) if (!validClassicRule(rule)) return { safe: false, reason: 'effective classic firewall rule malformed' }
   for (const policy of effective.firewallPolicys) {
-    if (!policy || typeof policy !== 'object' || !Array.isArray(policy.rules)) return { safe: false, reason: 'effective firewall policy collection malformed' }
+    if (!policy || typeof policy !== 'object' || Array.isArray(policy) || typeof policy.type !== 'string' || !policy.type || !Array.isArray(policy.rules)) return { safe: false, reason: 'effective firewall policy collection malformed' }
+    for (const rule of policy.rules) if (!validPolicyRule(rule)) return { safe: false, reason: 'effective firewall policy rule malformed' }
   }
   return { safe: true }
 }
@@ -68,7 +119,7 @@ function effectiveShapeSafe(effective) {
 function activePolicyRules(effective) {
   const rows = []
   for (const policy of effective.firewallPolicys) {
-    for (const rule of policy.rules) if (rule?.disabled !== true) rows.push({ policy, rule })
+    for (const rule of policy.rules) if (rule.disabled !== true) rows.push({ policy, rule })
   }
   return rows
 }
@@ -77,9 +128,9 @@ function policyLayersSafe(effective) {
   const shape = effectiveShapeSafe(effective)
   if (!shape.safe) return shape
   for (const { policy, rule } of activePolicyRules(effective)) {
-    const type = String(policy?.type || '')
-    if (!type.startsWith('SYSTEM_')) return { safe: false, reason: `custom effective firewall policy present (${type || 'UNKNOWN'})` }
-    if (rule?.direction === 'EGRESS' && String(rule?.action || '').toLowerCase() === 'allow') return { safe: false, reason: 'system firewall policy contains egress allow' }
+    const type = policy.type
+    if (!type.startsWith('SYSTEM_')) return { safe: false, reason: `custom effective firewall policy present (${type})` }
+    if (rule.direction === 'EGRESS' && rule.action.toLowerCase() === 'allow') return { safe: false, reason: 'system firewall policy contains egress allow' }
   }
   return { safe: true }
 }
@@ -116,6 +167,16 @@ function validateExactWorkload({ workload, runtime_identity, protectedNetwork, p
   return { safe: true, nic }
 }
 
+function exactRestrictedServices(status) {
+  if (!Array.isArray(status.restrictedServices) || !status.restrictedServices.every((service) => typeof service === 'string' && service.length > 0)) return { safe: false, reason: 'service perimeter restricted-services state missing or malformed' }
+  const actual = [...status.restrictedServices].sort()
+  const expected = [...APPROVED_RESTRICTED_SERVICES].sort()
+  if (new Set(actual).size !== actual.length || actual.length !== expected.length || actual.some((service, index) => service !== expected[index])) {
+    return { safe: false, reason: `service perimeter restricted-services set must exactly equal audited allowlist: ${expected.join(',')}` }
+  }
+  return { safe: true, services: actual }
+}
+
 export function evaluateGcpNetworkPosture({ effective_firewalls, regional_effective_firewalls, workload_effective_firewalls, subnetwork, workload, runtime_identity, perimeter, protected_resource, project_id, expected_nic = 'nic0' }) {
   const protectedNetwork = subnetwork?.network
   const protectedSubnetwork = subnetwork?.selfLink || null
@@ -135,15 +196,14 @@ export function evaluateGcpNetworkPosture({ effective_firewalls, regional_effect
   if (!exact.safe) return { ready: false, reason: exact.reason }
 
   const status = perimeter?.status
-  if (!status || perimeter?.useExplicitDryRunSpec === true) return { ready: false, reason: 'VPC Service Controls perimeter is not enforced' }
+  if (!status || typeof status !== 'object' || Array.isArray(status) || perimeter?.useExplicitDryRunSpec === true) return { ready: false, reason: 'VPC Service Controls perimeter is not enforced' }
   if (!Array.isArray(status.resources) || !status.resources.includes(protected_resource)) return { ready: false, reason: 'project is outside service perimeter' }
-  if ((Array.isArray(status.egressPolicies) && status.egressPolicies.length) || (Array.isArray(status.ingressPolicies) && status.ingressPolicies.length)) {
-    return { ready: false, reason: 'unapproved VPC Service Controls ingress/egress escape policy present' }
+  for (const field of ['egressPolicies', 'ingressPolicies']) {
+    if (Object.hasOwn(status, field) && !Array.isArray(status[field])) return { ready: false, reason: `VPC Service Controls ${field} state malformed` }
+    if (Array.isArray(status[field]) && status[field].length) return { ready: false, reason: 'unapproved VPC Service Controls ingress/egress escape policy present' }
   }
-  if (!Array.isArray(status.restrictedServices)) return { ready: false, reason: 'service perimeter restricted-services state missing' }
-  const restrictedServices = new Set(status.restrictedServices)
-  const missing = REQUIRED_RESTRICTED_SERVICES.filter((service) => !restrictedServices.has(service))
-  if (missing.length) return { ready: false, reason: `service perimeter missing restricted services: ${missing.join(',')}` }
+  const restricted = exactRestrictedServices(status)
+  if (!restricted.safe) return { ready: false, reason: restricted.reason }
   const accessible = status.vpcAccessibleServices
   if (!accessible || accessible.enableRestriction !== true || !Array.isArray(accessible.allowedServices) || accessible.allowedServices.length !== 1 || accessible.allowedServices[0] !== 'RESTRICTED-SERVICES') {
     return { ready: false, reason: 'VPC accessible services must explicitly restrict access to RESTRICTED-SERVICES' }
@@ -171,7 +231,7 @@ export function evaluateGcpNetworkPosture({ effective_firewalls, regional_effect
     allow_rule: classic.restrictedRule.name || null,
     perimeter_name: perimeter.name || null,
     protected_resource,
-    restricted_services: [...restrictedServices].sort(),
+    restricted_services: restricted.services,
     effective_policy_layers_checked: true,
   }
 }
@@ -245,6 +305,7 @@ export async function createSignedEgressEnforcementAttestation({ collector, sign
     ipv4_only: posture.ipv4_only,
     effective_policy_layers_checked: posture.effective_policy_layers_checked,
     restricted_vip: posture.restricted_vip,
+    restricted_services: posture.restricted_services,
     perimeter_name: posture.perimeter_name,
     protected_resource: posture.protected_resource,
     observed_at: now.toISOString(),
