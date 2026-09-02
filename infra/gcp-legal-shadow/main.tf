@@ -70,8 +70,6 @@ resource "google_compute_subnetwork" "legal" {
   private_ip_google_access = true
 }
 
-# Network-wide rules: no target tags or target service accounts. This avoids a
-# configuration that appears deny-by-default while silently missing workloads.
 resource "google_compute_firewall" "allow_restricted_googleapis" {
   name      = "trustready-allow-restricted-googleapis"
   project   = var.project_id
@@ -99,7 +97,6 @@ resource "google_compute_firewall" "deny_all_egress" {
   }
 }
 
-# Private DNS forces *.googleapis.com through restricted.googleapis.com.
 resource "google_dns_managed_zone" "googleapis" {
   name        = "trustready-googleapis-private"
   project     = var.project_id
@@ -146,59 +143,10 @@ resource "google_project_iam_member" "gateway_roles" {
   member   = "serviceAccount:${google_service_account.legal_gateway.email}"
 }
 
-# The actual mandate-shadow sender is a dedicated VM with one private IPv4 NIC.
-# Runtime qualification reads its identity from the local GCE metadata server
-# and cross-checks instance ID, zone, network, subnet and service account against
-# the Compute API before any network posture can become ready.
-resource "google_compute_instance" "legal_gateway" {
-  name                      = "trustready-legal-gateway"
-  project                   = var.project_id
-  zone                      = var.gateway_zone
-  machine_type              = var.gateway_machine_type
-  can_ip_forward            = false
-  deletion_protection       = true
-  allow_stopping_for_update = true
-
-  boot_disk {
-    initialize_params {
-      image = "debian-cloud/debian-12"
-      size  = 20
-      type  = "pd-balanced"
-    }
-  }
-
-  network_interface {
-    subnetwork = google_compute_subnetwork.legal.id
-    stack_type = "IPV4_ONLY"
-    # Intentionally no access_config and no ipv6_access_config.
-  }
-
-  service_account {
-    email  = google_service_account.legal_gateway.email
-    scopes = ["https://www.googleapis.com/auth/cloud-platform"]
-  }
-
-  metadata = {
-    disable-legacy-endpoints = "true"
-  }
-
-  shielded_instance_config {
-    enable_secure_boot          = true
-    enable_vtpm                 = true
-    enable_integrity_monitoring = true
-  }
-
-  depends_on = [
-    google_compute_firewall.allow_restricted_googleapis,
-    google_compute_firewall.deny_all_egress,
-    google_project_iam_member.gateway_roles,
-  ]
-}
-
 resource "google_kms_key_ring" "legal" {
-  name     = "trustready-legal"
-  project  = var.project_id
-  location = var.region
+  name       = "trustready-legal"
+  project    = var.project_id
+  location   = var.region
   depends_on = [google_project_service.required]
 }
 
@@ -236,6 +184,54 @@ resource "google_storage_bucket" "evidence" {
   }
 
   depends_on = [google_project_service.required]
+}
+
+# The actual mandate-shadow sender is a dedicated VM with one private IPv4 NIC.
+# The approved immutable evidence bucket is pinned onto this exact workload as
+# authenticated local metadata; runtime code must match it to the qualified GCS bucket.
+resource "google_compute_instance" "legal_gateway" {
+  name                      = "trustready-legal-gateway"
+  project                   = var.project_id
+  zone                      = var.gateway_zone
+  machine_type              = var.gateway_machine_type
+  can_ip_forward            = false
+  deletion_protection       = true
+  allow_stopping_for_update = true
+
+  boot_disk {
+    initialize_params {
+      image = "debian-cloud/debian-12"
+      size  = 20
+      type  = "pd-balanced"
+    }
+  }
+
+  network_interface {
+    subnetwork = google_compute_subnetwork.legal.id
+    stack_type = "IPV4_ONLY"
+  }
+
+  service_account {
+    email  = google_service_account.legal_gateway.email
+    scopes = ["https://www.googleapis.com/auth/cloud-platform"]
+  }
+
+  metadata = {
+    disable-legacy-endpoints     = "true"
+    trustready-evidence-bucket   = google_storage_bucket.evidence.name
+  }
+
+  shielded_instance_config {
+    enable_secure_boot          = true
+    enable_vtpm                 = true
+    enable_integrity_monitoring = true
+  }
+
+  depends_on = [
+    google_compute_firewall.allow_restricted_googleapis,
+    google_compute_firewall.deny_all_egress,
+    google_project_iam_member.gateway_roles,
+  ]
 }
 
 resource "google_access_context_manager_service_perimeter" "legal" {
