@@ -29,9 +29,7 @@ function testTransport() { return createRestrictedGoogleApiTransportForTest({ si
 
 function cloneThroughPrototype(value) {
   const clone = Object.create(value)
-  for (const symbol of Object.getOwnPropertySymbols(value)) {
-    try { Object.defineProperty(clone, symbol, { value: false, enumerable: true, configurable: true }) } catch {}
-  }
+  for (const symbol of Object.getOwnPropertySymbols(value)) { try { Object.defineProperty(clone, symbol, { value: false, enumerable: true, configurable: true }) } catch {} }
   return clone
 }
 
@@ -48,6 +46,8 @@ test('production DLP configuration cannot be weakened by caller options', () => 
   assert.throws(() => createGoogleSensitiveDataScanner({ project_id: 'trustready-prod', token_provider: token, info_types: ['EMAIL_ADDRESS'] }), /approved legal info-type set/)
   assert.throws(() => createGoogleSensitiveDataScanner({ project_id: 'trustready-prod', token_provider: token, min_likelihood: 'VERY_LIKELY' }), /approved legal info-type set, likelihood and finding limit/)
   assert.throws(() => createGoogleSensitiveDataScanner({ project_id: 'trustready-prod', token_provider: token, max_findings: 1 }), /approved legal info-type set, likelihood and finding limit/)
+  assert.throws(() => createGoogleSensitiveDataScanner({ project_id: 'trustready-prod', token_provider: token, location: 'us' }), /approved EU location/)
+  assert.throws(() => createGoogleSensitiveDataScanner({ project_id: 'trustready-prod', token_provider: token, location: 'global' }), /approved EU location/)
   assert.equal(isProductionGoogleSensitiveDataScanner(createGoogleSensitiveDataScanner({ project_id: 'trustready-prod', token_provider: token })), true)
 })
 
@@ -64,19 +64,38 @@ function rootedStore() {
   const signed = signKeyring({ keys: [{ key_id: 'leaf', purpose: 'identity', public_key: leaf.publicKey }], version: 'v9', valid_until: '2026-12-31T00:00:00Z', private_key: root.privateKey, key_id: 'offline-root' })
   return createRootedKeyTrustStore({ signed_keyring: signed, pinned_root_public_key: root.publicKey, expected_root_fingerprint: publicKeyFingerprint(root.publicKey), now: NOW })
 }
-function productionAdapters() {
+function productionAdapters(project_id = 'trustready-prod') {
   const networkSigner = productionHsm('network')
   return {
     key_store: rootedStore(),
-    dlp_scanner: createGoogleSensitiveDataScanner({ project_id: 'trustready-prod', token_provider: token }),
+    dlp_scanner: createGoogleSensitiveDataScanner({ project_id, token_provider: token }),
     dlp_signer: productionHsm('dlp'),
-    network_collector: createGcpNetworkPostureCollector({ project_id: 'trustready-prod', region: 'europe-west3', subnetwork: 'legal', service_perimeter_name: 'accessPolicies/1/servicePerimeters/legal', token_provider: token }),
+    network_collector: createGcpNetworkPostureCollector({ project_id, region: 'europe-west3', subnetwork: 'legal', service_perimeter_name: 'accessPolicies/1/servicePerimeters/legal', token_provider: token }),
     egress_signer: productionHsm('egress'),
     restricted_transport: createRestrictedGoogleApiTransport({ signer: networkSigner }),
     evidence_signer: productionHsm('evidence'),
     worm_store: createGcsWormEvidenceStore({ bucket: 'trustready-evidence', token_provider: token }),
   }
 }
+
+test('production DLP project must equal protected gateway project before any mandate scan', async () => {
+  let scanCalls = 0
+  const adapters = productionAdapters('trustready-prod')
+  const wrongProjectScanner = createGoogleSensitiveDataScanner({ project_id: 'trustready-other', token_provider: token })
+  const originalInspect = wrongProjectScanner.inspect
+  // Exact-instance/frozen adapter means inspect cannot be replaced; project mismatch must be decided before inspect anyway.
+  assert.equal(typeof originalInspect, 'function')
+  const result = await runGcpMandateShadowPipeline({
+    ...adapters,
+    dlp_scanner: wrongProjectScanner,
+    runtime_state: { production: true, release: 'r9', dlp_config_fingerprint: legalDlpConfigFingerprint() },
+    request: { tenant_id: 'tenant-a', matter_id: 'm1', policy_version: 'legal-v9', payload: { body_excerpt: 'synthetic' } },
+    provider_passport: {}, release: 'r9', bundle_id: 'b1', now: NOW,
+    provider_token_provider: async () => { scanCalls += 1; return 'not-reached-token' },
+  })
+  assert.equal(result.code, 'DLP_PROJECT_MISMATCH')
+  assert.equal(scanCalls, 0)
+})
 
 test('toJSON getters functions sparse arrays and custom prototypes are denied before security I/O', async () => {
   const badPayloads = [
