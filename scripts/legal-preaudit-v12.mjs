@@ -23,6 +23,7 @@ const requiredV12Regressions = [
   'infrastructure qualification rejects caller-controlled time before runtime I/O',
   'infrastructure qualification authenticates runtime and WORM before any DLP canary inspection',
   'mandate pipeline authenticates runtime network and WORM resource before mandate DLP inspection',
+  'mandate pipeline binds all four HSM key projects to authenticated runtime project before egress or DLP',
   'IaC pins the evidence bucket into the dedicated gateway metadata',
 ]
 
@@ -59,6 +60,7 @@ const report = {
       worm_project_identity_required: true,
       worm_checked_before_mandate_dlp: true,
       infrastructure_qualifier_time_internally_controlled: true,
+      runtime_hsm_keys_bound_to_authenticated_project: true,
     },
   },
   verdict: {
