@@ -12,7 +12,11 @@ export function canonicalize(value) {
 }
 
 export function sha256(value) {
-  return crypto.createHash('sha256').update(typeof value === 'string' ? value : canonicalize(value)).digest('hex')
+  let input
+  if (Buffer.isBuffer(value)) input = value
+  else if (value instanceof Uint8Array) input = Buffer.from(value)
+  else input = typeof value === 'string' ? value : canonicalize(value)
+  return crypto.createHash('sha256').update(input).digest('hex')
 }
 
 export function parseTime(value) {
