@@ -8,12 +8,13 @@ It does **not** issue a magic compliance score or certification.
 
 > **Core principle:** TrustReady should still be useful if the buyer does not trust TrustReady.
 
-## Live Legal demo
+## Live Legal demos
 
-- **Law-firm demo:** https://mikelninh.github.io/trustready/legal/
-- **Bao share link:** https://mikelninh.github.io/trustready/bao/
+- **Law-firm / Bao demo:** https://mikelninh.github.io/trustready/legal/
+- **Bao shortcut:** https://mikelninh.github.io/trustready/bao/
+- **Vietnamese-first client portal:** https://mikelninh.github.io/trustready/client/
 
-Both links are public **synthetic** demonstrations only. They do not authorise real mandate data or claim production readiness.
+These are public **synthetic** demonstrations only. They do not authorise real mandate data or claim production readiness. The client portal's demo file picker only changes local browser state; it does not transmit file contents.
 
 ## Two things live in this repository
 
@@ -33,35 +34,55 @@ allow / deny / unknown
 immutable evidence + remediation
 ```
 
-The existing scanner answers **“Can you prove this AI system is ready for this requirement?”**
+The scanner answers **“Can you prove this AI system is ready for this requirement?”**
 
-The legal trust gateway answers **“May this sensitive data reach this AI service, and can the decision be evidenced?”**
+The legal trust gateway answers **“May this sensitive data reach this AI service, may this action happen, and can the decision be evidenced?”**
 
 ### TrustReady Legal — first vertical proof
 
-The Legal Shadow Pilot turns the trust layer into a concrete daily workflow:
+The strongest first wedge is **Vietnamese-first legal intake**:
 
 ```text
-incoming work
+Vietnamese-speaking client
    ↓
-resolve matter
+clear checklist + missing-document upload
    ↓
-extract task + deadline + risk
+completeness + formalities + contradictions
    ↓
-prepare draft / proposal
+one bundled follow-up instead of phone/email ping-pong
    ↓
-lawyer approves, edits or rejects
+German/bilingual structured matter for the law firm
+   ↓
+intake team resolves explicit open items
+   ↓
+Bao reviews original evidence + derived translation
+   ↓
+lawyer approves, requests correction or rejects
 ```
 
-The current browser demos use synthetic data only. Email, beA, case writes and other irreversible actions remain disabled.
+The current public browser demos use synthetic data only. Email, beA, case writes and other irreversible actions remain disabled.
 
-Pilot success is deliberately measurable: **5 real workdays, at least 20 real work items, target ≥30 minutes net time saved per day, zero unauthorised external actions, and the lawyer chooses to keep using it.**
+The production-shaped portal security contract already covers opaque matter invitations, second-factor verification, tenant/matter-bound sessions, staff MFA/role separation, one-time upload capabilities, quarantine, malware-clean promotion, content hashes and database RLS. Those controls become production claims only after they are observed in the deployed environment.
 
-See:
-- [`docs/LEGAL_PRODUCT_GOAL.md`](docs/LEGAL_PRODUCT_GOAL.md)
+Pilot success is deliberately measurable: **5 real workdays, at least 20 real work items, target ≥30 minutes net time saved per day, materially fewer calls/e-mails, zero unauthorised external actions, and Bao/team choose to keep using it.**
+
+Useful entry points:
+- [`docs/BAO_PRODUCTION_PILOT_PLAN.md`](docs/BAO_PRODUCTION_PILOT_PLAN.md)
+- [`docs/CLIENT_PORTAL_SECURITY_ARCHITECTURE.md`](docs/CLIENT_PORTAL_SECURITY_ARCHITECTURE.md)
 - [`docs/BAO_PILOT_RUNBOOK.md`](docs/BAO_PILOT_RUNBOOK.md)
 - [`docs/LEGAL_EXTERNAL_REVIEW_REQUEST.md`](docs/LEGAL_EXTERNAL_REVIEW_REQUEST.md)
+- [`core/legal-client-portal.mjs`](core/legal-client-portal.mjs)
+- [`core/legal-client-portal.test.mjs`](core/legal-client-portal.test.mjs)
+- [`infra/gcp-legal-shadow/pilot_schema.sql`](infra/gcp-legal-shadow/pilot_schema.sql)
 - [Golden Shadow Pilot tracker #17](https://github.com/mikelninh/trustready/issues/17)
+
+Check the local promotion gate with:
+
+```bash
+npm run readiness:bao
+```
+
+An environment flag alone cannot promote real mandate data or sending. The higher live/legal/independent verdicts must actually exist.
 
 ## Scanner workflow
 
@@ -137,7 +158,9 @@ The control model is designed to map controls to multiple frameworks without pre
 TrustReady deliberately separates engineering proof from real-world authority:
 
 ```text
-synthetic demo
+public synthetic demo
+  ↓
+production-shaped synthetic pilot
   ↓
 engineering pre-audit
   ↓
@@ -163,7 +186,8 @@ TrustReady is an **engineering assurance layer**, not a certification body, regu
 - [`docs/ENDGOAL.md`](docs/ENDGOAL.md)
 - [`docs/TRUST_MODEL.md`](docs/TRUST_MODEL.md)
 - [`docs/LEGAL_PRODUCT_GOAL.md`](docs/LEGAL_PRODUCT_GOAL.md)
-- [`docs/BAO_PILOT_RUNBOOK.md`](docs/BAO_PILOT_RUNBOOK.md)
+- [`docs/BAO_PRODUCTION_PILOT_PLAN.md`](docs/BAO_PRODUCTION_PILOT_PLAN.md)
+- [`docs/CLIENT_PORTAL_SECURITY_ARCHITECTURE.md`](docs/CLIENT_PORTAL_SECURITY_ARCHITECTURE.md)
 - [`docs/LEGAL_EXTERNAL_REVIEW_REQUEST.md`](docs/LEGAL_EXTERNAL_REVIEW_REQUEST.md)
 
 ---
