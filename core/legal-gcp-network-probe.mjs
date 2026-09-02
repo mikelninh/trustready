@@ -1,3 +1,4 @@
+import crypto from 'node:crypto'
 import net from 'node:net'
 import tls from 'node:tls'
 import dns from 'node:dns/promises'
@@ -39,9 +40,8 @@ function connectTls({ hostname, address, tls_connect = tls.connect, timeout_ms =
         const cert = socket.getPeerCertificate?.(true)
         const remote = socket.remoteAddress
         const authorised = socket.authorized === true
-        const authorizationError = socket.authorizationError || null
-        const fingerprint = cert?.raw ? `sha256:${awaitHash(cert.raw)}` : null
-        finish({ ok: authorised && RESTRICTED_VIP.has(remote), remote_address: remote, certificate_valid: authorised, authorization_error: authorizationError, peer_fingerprint: fingerprint, alpn: socket.alpnProtocol || null })
+        const fingerprint = cert?.raw ? `sha256:${crypto.createHash('sha256').update(cert.raw).digest('hex')}` : null
+        finish({ ok: authorised && RESTRICTED_VIP.has(remote), remote_address: remote, certificate_valid: authorised, authorization_error: socket.authorizationError || null, peer_fingerprint: fingerprint, alpn: socket.alpnProtocol || null })
       })
       socket.setTimeout?.(timeout_ms, () => finish({ ok: false, reason: 'TLS timeout' }))
       socket.on?.('error', () => finish({ ok: false, reason: 'TLS connection failed' }))
@@ -49,12 +49,6 @@ function connectTls({ hostname, address, tls_connect = tls.connect, timeout_ms =
       finish({ ok: false, reason: 'TLS connection failed' })
     }
   })
-}
-
-function awaitHash(bytes) {
-  const crypto = globalThis.__trustreadyCrypto
-  if (crypto?.createHash) return crypto.createHash('sha256').update(bytes).digest('hex')
-  return null
 }
 
 export function createRestrictedGoogleApiProbe({ signer, resolve4 = dns.resolve4, tls_connect = tls.connect, timeout_ms = 5000 }) {
@@ -77,18 +71,11 @@ export function createRestrictedGoogleApiProbe({ signer, resolve4 = dns.resolve4
     if (peers.length !== dnsProof.addresses.length || peers.some((peer) => !RESTRICTED_VIP.has(peer))) return null
 
     const body = {
-      schema: 'trustready-network-attestation-v1',
-      endpoint: parsed.origin,
-      hostname,
-      region,
-      tls: true,
-      certificate_valid: true,
-      redirected: false,
-      route_class: 'restricted-googleapis',
-      resolved_addresses: dnsProof.addresses,
+      schema: 'trustready-network-attestation-v1', endpoint: parsed.origin, hostname, region,
+      tls: true, certificate_valid: true, redirected: false,
+      route_class: 'restricted-googleapis', resolved_addresses: dnsProof.addresses,
       peer_fingerprint: tlsResults[0]?.peer_fingerprint || null,
-      observed_at: now.toISOString(),
-      expires_at: new Date(now.getTime() + 30_000).toISOString(),
+      observed_at: now.toISOString(), expires_at: new Date(now.getTime() + 30_000).toISOString(),
     }
     return signEnvelopeWithSigner({ body, signer, purpose: 'network_attestation' })
   }
