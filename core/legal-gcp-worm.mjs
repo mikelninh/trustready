@@ -1,8 +1,11 @@
 import { canonicalize, sha256, signEnvelopeWithSigner } from './legal-key-identity.mjs'
 import { verifyEvidenceBundle } from './legal-evidence.mjs'
 
+export const PRODUCTION_WORM_MIN_RETENTION_SECONDS = 30 * 24 * 60 * 60
 const WORM_STORE_BRAND = Symbol('trustready.gcs-worm-store')
 const TEST_WORM_STORE_BRAND = Symbol('trustready.test-gcs-worm-store')
+const PRODUCTION_WORM_STORES = new WeakSet()
+const TEST_WORM_STORES = new WeakSet()
 const NATIVE_FETCH = typeof globalThis.fetch === 'function' ? globalThis.fetch.bind(globalThis) : null
 
 async function token(provider) {
@@ -26,7 +29,7 @@ async function request({ fetch_impl, token_provider, url, method = 'GET', body, 
   return response
 }
 
-export function evaluateBucketLockPosture({ bucket, min_retention_seconds = 30 * 24 * 60 * 60 }) {
+export function evaluateBucketLockPosture({ bucket, min_retention_seconds = PRODUCTION_WORM_MIN_RETENTION_SECONDS }) {
   if (!bucket?.name) return { ready: false, reason: 'bucket metadata missing' }
   if (bucket?.retentionPolicy?.isLocked !== true) return { ready: false, reason: 'bucket retention policy is not permanently locked' }
   const retention = Number(bucket?.retentionPolicy?.retentionPeriod)
@@ -39,6 +42,7 @@ export function evaluateBucketLockPosture({ bucket, min_retention_seconds = 30 *
 function buildStore({ bucket, fetch_impl, token_provider, min_retention_seconds, test_only }) {
   if (!/^[a-z0-9._-]{3,222}$/.test(bucket || '')) throw new TypeError('valid GCS bucket required')
   if (typeof fetch_impl !== 'function') throw new TypeError('GCS WORM fetch implementation required')
+  if (!Number.isFinite(min_retention_seconds) || min_retention_seconds < 0) throw new TypeError('valid WORM retention requirement required')
   const metadataUrl = `https://storage.googleapis.com/storage/v1/b/${encodeURIComponent(bucket)}`
   const store = {
     [WORM_STORE_BRAND]: true,
@@ -68,23 +72,27 @@ function buildStore({ bucket, fetch_impl, token_provider, min_retention_seconds,
       }
     },
   }
-  return Object.freeze(store)
+  Object.freeze(store)
+  if (test_only) TEST_WORM_STORES.add(store)
+  else PRODUCTION_WORM_STORES.add(store)
+  return store
 }
 
 export function isProductionGcsWormEvidenceStore(store) {
-  return store?.[WORM_STORE_BRAND] === true && store?.[TEST_WORM_STORE_BRAND] !== true && typeof store.append === 'function' && typeof store.posture === 'function'
+  return PRODUCTION_WORM_STORES.has(store)
 }
 
 export function isTestGcsWormEvidenceStore(store) {
-  return store?.[WORM_STORE_BRAND] === true && store?.[TEST_WORM_STORE_BRAND] === true && typeof store.append === 'function' && typeof store.posture === 'function'
+  return TEST_WORM_STORES.has(store)
 }
 
-export function createGcsWormEvidenceStore({ bucket, token_provider, min_retention_seconds = 30 * 24 * 60 * 60 }) {
+export function createGcsWormEvidenceStore({ bucket, token_provider, min_retention_seconds = PRODUCTION_WORM_MIN_RETENTION_SECONDS }) {
   if (typeof NATIVE_FETCH !== 'function') throw new TypeError('native fetch required for production GCS WORM store')
+  if (!Number.isFinite(min_retention_seconds) || min_retention_seconds < PRODUCTION_WORM_MIN_RETENTION_SECONDS) throw new TypeError('production WORM retention cannot be lower than the mandatory floor')
   return buildStore({ bucket, fetch_impl: NATIVE_FETCH, token_provider, min_retention_seconds, test_only: false })
 }
 
-export function createGcsWormEvidenceStoreForTest({ bucket, fetch_impl, token_provider, min_retention_seconds = 30 * 24 * 60 * 60 }) {
+export function createGcsWormEvidenceStoreForTest({ bucket, fetch_impl, token_provider, min_retention_seconds = PRODUCTION_WORM_MIN_RETENTION_SECONDS }) {
   return buildStore({ bucket, fetch_impl, token_provider, min_retention_seconds, test_only: true })
 }
 
