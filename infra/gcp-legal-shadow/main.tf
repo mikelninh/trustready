@@ -25,6 +25,10 @@ locals {
   ])
 }
 
+data "google_project" "current" {
+  project_id = var.project_id
+}
+
 resource "google_project_service" "required" {
   for_each           = local.required_apis
   project            = var.project_id
@@ -160,7 +164,7 @@ resource "google_access_context_manager_service_perimeter" "legal" {
   title  = "TrustReady Legal"
 
   status {
-    resources           = ["projects/${var.project_number}"]
+    resources           = ["projects/${data.google_project.current.number}"]
     restricted_services = local.restricted_services
 
     vpc_accessible_services {
