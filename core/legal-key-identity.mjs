@@ -40,8 +40,10 @@ function verifySignature(publicKey, body, signature, algorithm) {
     const data = Buffer.from(canonicalize(body))
     const sig = Buffer.from(signature, 'base64')
     if (algorithm === 'Ed25519') return crypto.verify(null, data, asPublicKey(publicKey), sig)
-    const digest = crypto.createHash('sha256').update(data).digest()
-    return crypto.verify(null, digest, asPublicKey(publicKey), sig)
+    // Google Cloud KMS EC_SIGN_P256_SHA256 receives SHA-256(data) and signs that digest.
+    // Node's ECDSA `verify(null, digest, ...)` hashes the digest again, so it is not a raw-digest verifier.
+    // Verifying with SHA-256 over the original canonical bytes produces exactly the digest KMS signed.
+    return crypto.verify('sha256', data, asPublicKey(publicKey), sig)
   } catch {
     return false
   }
