@@ -85,6 +85,17 @@ test('mandate pipeline authenticates runtime network and WORM resource before ma
   assert.ok(runtime >= 0 && network > runtime && worm > network && dlp > worm)
 })
 
+test('mandate pipeline binds all four HSM key projects to authenticated runtime project before egress or DLP', () => {
+  const source = fs.readFileSync(new URL('./legal-gcp-runtime-pipeline.mjs', import.meta.url), 'utf8')
+  const parser = source.indexOf('function projectIdFromKmsName')
+  const loop = source.indexOf('for (const [purpose, posture] of Object.entries(postures))')
+  const check = source.indexOf('projectIdFromKmsName(posture.key_version_name) !== runtimeIdentity.project_id')
+  const deny = source.indexOf("return notReady('HSM_PROJECT_MISMATCH'")
+  const network = source.indexOf('const enforcement = await createSignedEgressEnforcementAttestation')
+  const dlp = source.indexOf('const dlp = await createSignedDlpAttestation')
+  assert.ok(parser >= 0 && loop > parser && check > loop && deny > check && network > deny && dlp > deny)
+})
+
 test('IaC pins the evidence bucket into the dedicated gateway metadata', () => {
   const source = fs.readFileSync(new URL('../infra/gcp-legal-shadow/main.tf', import.meta.url), 'utf8')
   assert.match(source, /trustready-evidence-bucket\s*=\s*google_storage_bucket\.evidence\.name/)
