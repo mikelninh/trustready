@@ -17,6 +17,8 @@ jobs:
         run: npm test
       - name: Run labelled scanner safety benchmark
         run: npm run benchmark:scanner
+      - name: Run reproducible legal pre-audit
+        run: npm run audit:legal
       - name: Validate collector, billing, API, MCP, WebMCP, UI and dogfood entrypoints
         run: |
           node --check collectors/github-public.mjs
@@ -35,5 +37,6 @@ jobs:
           node --check billing.js
           node --check app.js
           node --check scripts/dogfood.mjs
+          node --check scripts/legal-preaudit.mjs
       - name: Validate versioned procurement profile
         run: node -e "const p=require('./profiles/core-ai-procurement-2026.08.json'); if(!p.id||!p.version||p.controls.length<20) process.exit(1); console.log(p.id,p.version,p.controls.length)"
