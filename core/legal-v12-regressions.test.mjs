@@ -69,19 +69,19 @@ test('infrastructure qualification rejects caller-controlled time before runtime
 
 test('infrastructure qualification authenticates runtime and WORM before any DLP canary inspection', () => {
   const source = fs.readFileSync(new URL('./legal-gcp-qualification.mjs', import.meta.url), 'utf8')
-  const runtime = source.indexOf('createGceRuntimeIdentityProvider().collect()')
-  const network = source.indexOf('network_collector.collect()')
-  const worm = source.indexOf('worm_store.posture()')
-  const dlp = source.indexOf('dlp_scanner.inspect({ payload: SAFE_CANARY })')
+  const runtime = source.indexOf('runtimeIdentity = await createGceRuntimeIdentityProvider().collect()')
+  const network = source.indexOf('network = await network_collector.collect()')
+  const worm = source.indexOf('worm = await worm_store.posture()')
+  const dlp = source.indexOf('safeScan = await dlp_scanner.inspect({ payload: SAFE_CANARY })')
   assert.ok(runtime >= 0 && network > runtime && worm > network && dlp > worm)
 })
 
 test('mandate pipeline authenticates runtime network and WORM resource before mandate DLP inspection', () => {
   const source = fs.readFileSync(new URL('./legal-gcp-runtime-pipeline.mjs', import.meta.url), 'utf8')
-  const runtime = source.indexOf('createGceRuntimeIdentityProvider().collect()')
-  const network = source.indexOf('createSignedEgressEnforcementAttestation')
-  const worm = source.indexOf('worm_store.posture()')
-  const dlp = source.indexOf('createSignedDlpAttestation')
+  const runtime = source.indexOf('runtimeIdentity = await createGceRuntimeIdentityProvider().collect()')
+  const network = source.indexOf('const enforcement = await createSignedEgressEnforcementAttestation')
+  const worm = source.indexOf('wormPosture = await worm_store.posture()')
+  const dlp = source.indexOf('const dlp = await createSignedDlpAttestation')
   assert.ok(runtime >= 0 && network > runtime && worm > network && dlp > worm)
 })
 
