@@ -19,6 +19,20 @@ test('IaC encodes IPv4-only network-wide deny-all with only restricted Google AP
   assert.match(main, /restricted\.googleapis\.com\./)
 })
 
+test('IaC provisions a dedicated private gateway workload with one service identity and no external IP config', () => {
+  assert.match(main, /resource\s+"google_service_account"\s+"legal_gateway"/)
+  assert.match(main, /resource\s+"google_compute_instance"\s+"legal_gateway"/)
+  assert.match(main, /name\s*=\s*"trustready-legal-gateway"/)
+  assert.match(main, /service_account\s*\{[\s\S]*google_service_account\.legal_gateway\.email/)
+  assert.match(main, /network_interface\s*\{[\s\S]*subnetwork\s*=\s*google_compute_subnetwork\.legal\.id[\s\S]*stack_type\s*=\s*"IPV4_ONLY"/)
+  assert.doesNotMatch(main, /access_config\s*\{/)
+  assert.doesNotMatch(main, /ipv6_access_config\s*\{/)
+  assert.match(main, /disable-legacy-endpoints\s*=\s*"true"/)
+  assert.match(main, /enable_secure_boot\s*=\s*true/)
+  assert.match(outputs, /gateway_instance_id\s*=\s*google_compute_instance\.legal_gateway\.instance_id/)
+  assert.match(outputs, /gateway_service_account\s*=\s*google_service_account\.legal_gateway\.email/)
+})
+
 test('IaC provisions four purpose-separated asymmetric HSM keys using P-256 SHA-256', () => {
   for (const name of ['dlp-attestation', 'egress-enforcement', 'network-attestation', 'evidence-manifest']) assert.match(main, new RegExp(`"${name}"`))
   assert.match(main, /purpose\s*=\s*"ASYMMETRIC_SIGN"/)
@@ -36,7 +50,7 @@ test('VPC Service Controls project identity is derived from project_id rather th
 })
 
 test('VPC Service Controls restricts all services used by the mandate shadow path without escape-policy blocks', () => {
-  for (const service of ['aiplatform.googleapis.com', 'cloudkms.googleapis.com', 'dlp.googleapis.com', 'storage.googleapis.com']) assert.match(main, new RegExp(service.replaceAll('.', '\\.')))
+  for (const service of ['aiplatform.googleapis.com', 'cloudkms.googleapis.com', 'cloudresourcemanager.googleapis.com', 'compute.googleapis.com', 'dlp.googleapis.com', 'storage.googleapis.com']) assert.match(main, new RegExp(service.replaceAll('.', '\\.')))
   assert.match(main, /enable_restriction\s*=\s*true/)
   assert.match(main, /allowed_services\s*=\s*\["RESTRICTED-SERVICES"\]/)
   assert.doesNotMatch(main, /egress_policies?\s*\{/)
