@@ -7,13 +7,14 @@ const vars = fs.readFileSync(new URL('../infra/gcp-legal-shadow/variables.tf', i
 const outputs = fs.readFileSync(new URL('../infra/gcp-legal-shadow/outputs.tf', import.meta.url), 'utf8')
 const readme = fs.readFileSync(new URL('../infra/gcp-legal-shadow/README.md', import.meta.url), 'utf8')
 
-test('IaC encodes network-wide deny-all with only restricted Google API VIP allow', () => {
+test('IaC encodes IPv4-only network-wide deny-all with only restricted Google API VIP allow', () => {
   assert.match(main, /destination_ranges\s*=\s*\["199\.36\.153\.4\/30"\]/)
   assert.match(main, /destination_ranges\s*=\s*\["0\.0\.0\.0\/0"\]/)
   assert.match(main, /deny\s*\{\s*protocol\s*=\s*"all"/s)
   assert.doesNotMatch(main, /target_tags\s*=/)
   assert.doesNotMatch(main, /target_service_accounts\s*=/)
   assert.match(main, /private_ip_google_access\s*=\s*true/)
+  assert.match(main, /stack_type\s*=\s*"IPV4_ONLY"/)
   assert.match(main, /\*\.googleapis\.com\./)
   assert.match(main, /restricted\.googleapis\.com\./)
 })
