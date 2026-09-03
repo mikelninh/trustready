@@ -44,7 +44,7 @@ test('Bao cockpit stays synthetic and has no browser egress primitive', () => {
   assert.match(html, /Synthetische Probe/i)
   assert.match(html, /kein Produktivbetrieb/i)
   assert.match(html, /connect-src 'none'/)
-  assert.match(html, /Freigeben & senden — späterer Release/i)
+  assert.match(html + js, /Freigeben & senden — späterer Release/i)
   assert.doesNotMatch(html + js, /\bfetch\s*\(/)
   assert.doesNotMatch(html + js, /XMLHttpRequest/)
   assert.doesNotMatch(html + js, /navigator\.sendBeacon/)
