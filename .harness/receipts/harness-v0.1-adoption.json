@@ -1,0 +1,22 @@
+{
+  "schema": "mikel-harness-receipt-v0.1",
+  "task_id": "harness-v0.1-adoption",
+  "verdict": "accepted",
+  "context_sources": ["README.md", "docs/TRUST_MODEL.md", ".github/workflows/ci.yml", "package.json"],
+  "tools_used": ["GitHub branch", "GitHub pull request", "GitHub Actions"],
+  "verification": {
+    "implementation_commit": "2f48a6f1a6866e4c309142a396b606902348b08a",
+    "harness_workflow": {"run_id": 33744289191, "conclusion": "success"},
+    "trustready_ci": {"run_id": 33744289131, "conclusion": "success"},
+    "dogfood": {"run_id": 33744289123, "conclusion": "success"}
+  },
+  "human_corrections": 0,
+  "retries": 0,
+  "external_actions": [
+    {"kind": "open_pull_request", "target": "#18", "risk_class": "A2", "approved": true}
+  ],
+  "accepted_artifact": "PR #18",
+  "rollback_point": "ed5115bd8da897900c0ca9cadf01ffd1f60d8026",
+  "next_owner": "operator",
+  "next_step": "Merge PR #18."
+}

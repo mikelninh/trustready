@@ -1,16 +1,17 @@
 # Harness handoff
 
 ## Status
-Ready for independent verification.
+Verified and accepted for merge.
 
 ## Current step
-Run the new harness check plus existing TrustReady CI and inspect the pull request.
+Merge PR #18. The harness, existing TrustReady CI and dogfood workflow all passed on the implementation commit.
 
 ## Evidence
+- Harness workflow `33744289191`: success.
+- TrustReady CI workflow `33744289131`: success.
+- TrustReady dogfood workflow `33744289123`: success.
 - `AGENTS.md` maps TrustReady's authoritative docs and hard boundaries.
-- `.harness/project.json` binds sensors, action classes and retry policy to the repository.
-- `scripts/harness-check.mjs` mechanically rejects malformed tasks and unapproved A3/A4 actions in receipts.
-- `.github/workflows/harness.yml` makes the minimum contract continuously testable.
+- Acceptance receipt: `.harness/receipts/harness-v0.1-adoption.json`.
 
 ## Decisions
 - Keep TrustReady's existing trust kernel and legal promotion path authoritative.
@@ -19,10 +20,10 @@ Run the new harness check plus existing TrustReady CI and inspect the pull reque
 - Builder and Verifier remain separate for consequential claims and live-stage changes.
 
 ## Failures / uncertainties
-CI has not yet produced evidence for this branch.
+None observed in the harness, existing TrustReady CI or dogfood workflow for this change.
 
 ## Open risks
 Harness v0.1 checks repository/process invariants, not substantive legal compliance or independent audit quality.
 
 ## Next owner
-Verifier — run all gates, inspect for boundary regression, then record an accepted/partial/rejected receipt rather than relying on a summary message.
+Operator — merge the verified PR, then use a fresh task contract for the next TrustReady/Bao change.
