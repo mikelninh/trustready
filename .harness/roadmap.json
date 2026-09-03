@@ -3,24 +3,25 @@
   "project": "TrustReady",
   "north_star": "Make sensitive AI systems trustworthy enough that a buyer, reviewer or regulator can independently inspect what the system saw, what it was allowed to do, what evidence supports each claim and how remaining gaps get closed.",
   "achieved": [
-    {"title": "Evidence-first trust model and scanner", "evidence": ["README.md", "docs/TRUST_MODEL.md", "docs/ENDGOAL.md"]},
-    {"title": "Production-shaped legal trust gateway and Bao synthetic pilot", "evidence": ["docs/BAO_PRODUCTION_PILOT_PLAN.md", "docs/CLIENT_PORTAL_SECURITY_ARCHITECTURE.md"]},
-    {"title": "Fail-closed promotion and readiness gates", "evidence": ["README.md", "package.json", ".github/workflows/ci.yml"]}
+    {"title": "Evidence-first trust model and scanner", "label": "Trust scanner", "evidence": ["README.md", "docs/TRUST_MODEL.md", "docs/ENDGOAL.md"]},
+    {"title": "Production-shaped legal trust gateway and Bao synthetic pilot", "label": "Legal gateway", "evidence": ["docs/BAO_PRODUCTION_PILOT_PLAN.md", "docs/CLIENT_PORTAL_SECURITY_ARCHITECTURE.md"]},
+    {"title": "Fail-closed promotion and readiness gates", "label": "Readiness gates", "evidence": ["README.md", "package.json", ".github/workflows/ci.yml"]}
   ],
   "current": {
     "title": "Earn real-world proof with Bao's law-firm shadow pilot",
+    "label": "Bao pilot",
     "status": "active",
     "outcome": "Move from synthetic engineering proof to an externally reviewed, measured shadow workflow without widening authority prematurely."
   },
   "next": [
-    {"title": "Close external legal, privacy and security review gaps", "why": "Real mandate data cannot be promoted safely from engineering evidence alone."},
-    {"title": "Run the 5-day / 20-work-item shadow pilot", "why": "Measure actual time saved, corrections, calls/e-mails and unauthorised-action rate."},
-    {"title": "Prove repeatable value before widening any action authority", "why": "The target is evidence-backed retention and a narrow human-approved release path, not autonomy theatre."}
+    {"title": "Close external legal, privacy and security review gaps", "label": "External review", "why": "Real mandate data cannot be promoted safely from engineering evidence alone."},
+    {"title": "Run the 5-day / 20-work-item shadow pilot", "label": "Shadow pilot", "why": "Measure actual time saved, corrections, calls/e-mails and unauthorised-action rate."},
+    {"title": "Prove repeatable value before widening any action authority", "label": "Repeatable value", "why": "The target is evidence-backed retention and a narrow human-approved release path, not autonomy theatre."}
   ],
   "later": [
-    "Turn the scanner and trust gateway into reusable API/MCP infrastructure for other teams.",
-    "Add framework mappings and buyer/audit packs without pretending to issue certification.",
-    "Expand from legal to additional sensitive AI workflows only after the trust plane proves repeatable."
+    {"title": "Turn the scanner and trust gateway into reusable API/MCP infrastructure for other teams.", "label": "API / MCP"},
+    {"title": "Add framework mappings and buyer/audit packs without pretending to issue certification.", "label": "Audit packs"},
+    {"title": "Expand from legal to additional sensitive AI workflows only after the trust plane proves repeatable.", "label": "New domains"}
   ],
   "sources": ["README.md", "docs/ENDGOAL.md", "docs/TRUST_MODEL.md", "docs/BAO_PRODUCTION_PILOT_PLAN.md", "docs/CLIENT_PORTAL_SECURITY_ARCHITECTURE.md"],
   "updated_at": "2026-09-03"
