@@ -1,0 +1,19 @@
+name: harness-contract
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  harness:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check harness script syntax
+        run: node --check scripts/harness-check.mjs
+      - name: Enforce project contract, durable state and approval invariants
+        run: node scripts/harness-check.mjs

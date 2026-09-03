@@ -1,0 +1,26 @@
+{
+  "schema": "mikel-harness-task-v0.1",
+  "task_id": "harness-v0.1-adoption",
+  "status": "ready_for_review",
+  "goal": "Adopt Harness v0.1 without weakening TrustReady's existing fail-closed promotion and evidence boundaries.",
+  "sources": ["README.md", "docs/TRUST_MODEL.md", ".github/workflows/ci.yml", "package.json"],
+  "outputs": ["AGENTS.md", ".harness/project.json", ".harness/HANDOFF.md", "scripts/harness-check.mjs", ".github/workflows/harness.yml"],
+  "constraints": ["Preserve fail-closed behaviour.", "Do not widen live-data or external-action authority.", "Do not change scanner/legal verdict semantics."],
+  "done_when": ["Harness structure is present.", "Mechanical harness check passes.", "CI runs the harness check on pull requests and main."],
+  "forbidden": ["Real mandate data access", "External legal actions", "Self-issued certification/compliance claims", "Permission broadening"],
+  "risk_class": "A2",
+  "approval_required": false,
+  "max_retries": 3,
+  "current_step": "run_ci",
+  "evidence": [
+    {"kind": "file", "path": "AGENTS.md", "status": "present"},
+    {"kind": "file", "path": ".harness/project.json", "status": "present"},
+    {"kind": "file", "path": "scripts/harness-check.mjs", "status": "present"},
+    {"kind": "file", "path": ".github/workflows/harness.yml", "status": "present"}
+  ],
+  "failures": [],
+  "uncertainties": ["CI result is pending until the branch workflow runs."],
+  "next_owner": "verifier",
+  "next_step": "Run harness and existing TrustReady CI; reject the change if any trust boundary regresses.",
+  "receipt": null
+}
