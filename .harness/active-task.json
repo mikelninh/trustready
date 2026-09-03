@@ -16,5 +16,15 @@
   "failures": [],
   "uncertainties": ["External legal/privacy/security judgement cannot be replaced by repository evidence alone."],
   "next_owner": "operator",
-  "next_step": "Review the external-review pack and choose who should perform the legal/privacy/security critique before any real-data shadow pilot starts."
+  "next_step": "Review the external-review pack and choose who should perform the legal/privacy/security critique before any real-data shadow pilot starts.",
+  "decision_estimate": {
+    "scale": "1-5",
+    "impact": 5,
+    "urgency": 5,
+    "unlock_value": 5,
+    "effort": 1.5,
+    "confidence": 4.5,
+    "rationale": "A short human decision unlocks the next real-world proof step, but external professional judgement is still required.",
+    "source": "chief_estimate_v1"
+  }
 }
