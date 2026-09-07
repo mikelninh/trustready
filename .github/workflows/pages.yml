@@ -61,6 +61,8 @@ jobs:
           test -f _site/index.html
           test -f _site/security-portfolio.html
           test -f _site/security-portfolio.js
+          test -f _site/enterprise.html
+          test -f _site/enterprise.js
           test -f _site/core/security-posture.mjs
 
       - name: Upload Pages artifact

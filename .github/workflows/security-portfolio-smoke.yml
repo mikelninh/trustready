@@ -6,6 +6,8 @@ on:
     paths:
       - 'security-portfolio.html'
       - 'security-portfolio.js'
+      - 'enterprise.html'
+      - 'enterprise.js'
       - 'core/security-posture.mjs'
       - '.github/workflows/security-portfolio-smoke.yml'
 
@@ -24,6 +26,15 @@ jobs:
             -o /tmp/security-portfolio.html
           grep -q 'Security Evidence Portfolio' /tmp/security-portfolio.html
           grep -q 'compromised-model replays' /tmp/security-portfolio.html
+
+      - name: Verify public enterprise Agent Go-Live page is reachable
+        run: |
+          curl --fail --silent --show-error --location \
+            --retry 12 --retry-delay 5 --retry-all-errors \
+            https://mikelninh.github.io/trustready/enterprise.html \
+            -o /tmp/enterprise.html
+          grep -q 'Can this AI agent safely go live?' /tmp/enterprise.html
+          grep -q 'Go-Live Assessment' /tmp/enterprise.html
 
       - name: Verify all published project postures are reachable and parseable
         shell: bash
@@ -78,4 +89,22 @@ jobs:
           if (report.summary.impactEscapes !== 0) throw new Error('live-model impact escape present')
           if (report.summary.executorCalls !== 0) throw new Error('unsafe executor call present')
           console.log(`Live compromised-model evidence: ${report.summary.passed}/${report.summary.cases}; executor calls=${report.summary.executorCalls}; impact escapes=${report.summary.impactEscapes}`)
+          NODE
+
+      - name: Verify enterprise go-live report is live and internally consistent
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location \
+            --retry 6 --retry-delay 2 --retry-all-errors \
+            https://raw.githubusercontent.com/mikelninh/digital-worker-factory/main/enterprise/demo-go-live-report.json \
+            -o /tmp/go-live.json
+          node <<'NODE'
+          const fs = require('fs')
+          const report = JSON.parse(fs.readFileSync('/tmp/go-live.json', 'utf8'))
+          if (report.version !== 'enterprise-go-live-report/v1') throw new Error('invalid enterprise go-live report')
+          if (report.decision?.decision !== 'GO') throw new Error(`unexpected demo decision: ${report.decision?.decision}`)
+          if (report.decision?.summary?.blockers !== 0) throw new Error('demo go-live report has blockers')
+          if (!/not a certification/i.test(report.truthBoundary ?? '')) throw new Error('truth boundary missing')
+          console.log(`Enterprise go-live demo: ${report.decision.decision}; blockers=${report.decision.summary.blockers}`)
           NODE

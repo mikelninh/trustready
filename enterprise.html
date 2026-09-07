@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>TrustReady — Agent Go-Live Gate</title>
+  <meta name="description" content="Evidence-backed GO / CONDITIONAL / NO-GO decisions for AI agents before they touch production systems." />
+  <style>
+    :root{--bg:#0b0d10;--panel:#12161b;--panel2:#171c22;--line:#2a323c;--text:#eef2f5;--muted:#9aa7b4;--good:#7ee2a8;--warn:#f2c66d;--bad:#ff8b8b;--accent:#9fb8ff}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.55 Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}a{color:var(--accent)}header{padding:18px 5vw;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;position:sticky;top:0;background:rgba(11,13,16,.92);backdrop-filter:blur(14px);z-index:5}.brand{font-weight:800}main{max-width:1120px;margin:auto;padding:72px 24px 100px}.eyebrow{font-size:12px;letter-spacing:.14em;color:var(--accent);font-weight:800}.hero h1{font-size:clamp(42px,7vw,76px);line-height:.96;letter-spacing:-.055em;max-width:900px;margin:12px 0 22px}.hero p{font-size:20px;color:var(--muted);max-width:760px}.flow{margin:34px 0;display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.flow div,.card,.metric{border:1px solid var(--line);background:var(--panel);border-radius:14px;padding:18px}.flow b{display:block;margin-bottom:5px}.flow span,.muted{color:var(--muted)}.demo{margin:44px 0}.demo-head{display:flex;justify-content:space-between;gap:20px;align-items:end}.decision{font-size:13px;font-weight:900;letter-spacing:.1em;padding:8px 12px;border-radius:999px;border:1px solid #315b43;color:var(--good)}.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:14px 0}.metric b{display:block;font-size:26px}.metric span{font-size:11px;color:var(--muted);text-transform:uppercase}.proof{border:1px solid #315b43;background:rgba(126,226,168,.05);border-radius:16px;padding:22px;margin-top:14px}.proof h3{margin-top:0}.packages{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:20px}.card h3{margin:0 0 7px}.price{font-size:24px;font-weight:800;margin:12px 0}.card ul{color:var(--muted);padding-left:18px}.truth{margin-top:40px;border-top:1px solid var(--line);padding-top:22px;color:var(--muted)}@media(max-width:800px){.flow,.metrics,.packages{grid-template-columns:1fr 1fr}.demo-head{display:block}.decision{display:inline-block;margin-top:12px}}@media(max-width:520px){.flow,.metrics,.packages{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+<header><div class="brand">TrustReady · Agent Go-Live Gate</div><div><a href="./security-portfolio.html">Security evidence</a></div></header>
+<main>
+  <section class="hero">
+    <div class="eyebrow">FOR AI, SECURITY & COMPLIANCE TEAMS</div>
+    <h1>Can this AI agent safely go live?</h1>
+    <p>Connect one agent. TrustReady checks identity, tenant isolation, sensitive data, tool permissions, approvals, runtime limits, auditability, adversarial evidence, supply chain and incident readiness — then returns <strong>GO, CONDITIONAL or NO-GO</strong> with exact remediation.</p>
+  </section>
+
+  <section class="flow">
+    <div><b>1 · Connect</b><span>Declare agent, data and tools.</span></div>
+    <div><b>2 · Attack</b><span>Run adversarial and compromised-model cases.</span></div>
+    <div><b>3 · Enforce</b><span>Block unsafe effects outside the model.</span></div>
+    <div><b>4 · Prove</b><span>Export release and incident evidence.</span></div>
+  </section>
+
+  <section class="demo">
+    <div class="demo-head"><div><div class="eyebrow">LIVE SYNTHETIC BUYER DEMO</div><h2>ACME Support Copilot</h2><div class="muted">The report below is loaded from the same machine-readable evidence used by CI.</div></div><span id="decision" class="decision">LOADING</span></div>
+    <div id="metrics" class="metrics"></div>
+    <div id="proof" class="proof"><h3>Loading evidence…</h3></div>
+  </section>
+
+  <section>
+    <div class="eyebrow">HOW WE MONETISE IT</div>
+    <h2>Start with one agent. Expand into continuous assurance.</h2>
+    <div class="packages">
+      <article class="card"><h3>Go-Live Assessment</h3><div class="price">€7.5k–15k</div><ul><li>Threat model</li><li>Attack suite</li><li>GO / CONDITIONAL / NO-GO</li><li>Remediation plan</li></ul></article>
+      <article class="card"><h3>Secure Agent Pilot</h3><div class="price">€20k–50k</div><ul><li>Runtime security integration</li><li>Approvals + tenant boundaries</li><li>Audit + replay</li><li>Production gate</li></ul></article>
+      <article class="card"><h3>Continuous Assurance</h3><div class="price">€2.5k–10k/mo</div><ul><li>Release-time attacks</li><li>Posture drift</li><li>Incident evidence</li><li>Security/compliance exports</li></ul></article>
+    </div>
+  </section>
+
+  <div class="truth"><strong>Truth boundary:</strong> GO means the configured engineering release requirements are evidenced. It is not a certification, legal opinion, penetration-test substitute or guarantee that a system is secure.</div>
+</main>
+<script type="module" src="./enterprise.js"></script>
+</body>
+</html>
