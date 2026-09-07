@@ -1,0 +1,75 @@
+name: deploy-github-pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '*.html'
+      - '*.css'
+      - '*.js'
+      - '*.mjs'
+      - 'core/security-posture.mjs'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Build public static artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf _site
+          mkdir -p _site/core _site/legal _site/bao _site/client
+
+          find . -maxdepth 1 -type f \( \
+            -name '*.html' -o -name '*.css' -o -name '*.js' -o -name '*.mjs' \
+          \) -exec cp '{}' _site/ \;
+
+          cp core/security-posture.mjs _site/core/security-posture.mjs
+          cp legal.html _site/legal/index.html
+          cp bao.html _site/bao/index.html
+          cp client-portal.html _site/client/index.html
+          touch _site/.nojekyll
+
+          # Root-absolute static links in older demos need the project-site base path.
+          find _site -name '*.html' -type f -print0 | xargs -0 sed -i \
+            -e 's|href="/|href="/trustready/|g' \
+            -e 's|src="/|src="/trustready/|g'
+
+          test -f _site/index.html
+          test -f _site/security-portfolio.html
+          test -f _site/security-portfolio.js
+          test -f _site/core/security-posture.mjs
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
