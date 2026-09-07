@@ -8,6 +8,29 @@ It does **not** issue a magic compliance score or certification.
 
 > **Core principle:** TrustReady should still be useful if the buyer does not trust TrustReady.
 
+## Security Evidence Portfolio
+
+**[Open the cross-project Security Evidence view →](https://mikelninh.github.io/trustready/security-portfolio.html)**
+
+TrustReady now understands the portable **`security-posture/v1`** contract owned by the Digital Worker Factory Security Stack. Projects can publish machine-readable evidence for authority boundaries, least privilege, tenant isolation, human approval, provenance, protected data, bounded execution, auditability, supply-chain controls, adversarial evals and production monitoring.
+
+TrustReady does not trust a self-declared “secure” flag. It validates the evidence shape, rejects implemented controls with no attached evidence, blocks postures with critical impact escapes and explicitly refuses to turn repository evidence into a production-security or certification claim.
+
+```text
+project code / tests / CI / reports
+              ↓
+      security-posture/v1
+              ↓
+         TrustReady
+ validate → score evidence → flag contradictions
+              ↓
+ implemented / partial / not proven
+              ↓
+      residual risks stay visible
+```
+
+The first portfolio spans GitLaw, Digital Worker Factory, CareOS, PrüfPilot, MissionOps, SafeVoice, FraudFlow and SignalLab. Agent-heavy systems can prove containment controls; deterministic systems can honestly mark irrelevant agent controls `not_applicable` instead of adding decorative autonomy.
+
 ## Live Legal demos
 
 - **Law-firm / Bao demo:** https://mikelninh.github.io/trustready/legal/
@@ -183,6 +206,7 @@ TrustReady is an **engineering assurance layer**, not a certification body, regu
 
 ## Go deeper
 
+- [`core/security-posture.mjs`](core/security-posture.mjs)
 - [`docs/ENDGOAL.md`](docs/ENDGOAL.md)
 - [`docs/TRUST_MODEL.md`](docs/TRUST_MODEL.md)
 - [`docs/LEGAL_PRODUCT_GOAL.md`](docs/LEGAL_PRODUCT_GOAL.md)
