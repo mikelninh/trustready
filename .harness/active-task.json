@@ -1,7 +1,7 @@
 {
   "schema": "mikel-harness-task-v0.1",
   "task_id": "bao-external-review-gate",
-  "status": "awaiting_human_review",
+  "status": "blocked",
   "goal": "Close the external legal, privacy and security review gaps required before Bao's real-world shadow pilot can begin.",
   "sources": [".harness/roadmap.json", "docs/BAO_PRODUCTION_PILOT_PLAN.md", "docs/CLIENT_PORTAL_SECURITY_ARCHITECTURE.md", "docs/TRUST_MODEL.md"],
   "outputs": ["review gap checklist", "reviewer evidence pack", "go/no-go record for the shadow pilot"],
