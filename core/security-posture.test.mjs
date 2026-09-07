@@ -48,6 +48,27 @@ test('missing baseline security control produces partial state', () => {
   assert.ok(result.reasons.some((reason) => reason.includes('protected_data')))
 })
 
+test('partial baseline security control cannot be evidence-ready', () => {
+  const candidate = posture()
+  candidate.controls = candidate.controls.map((control) => control.id === 'adversarial_evals' ? { ...control, status: 'partial' } : control)
+  const result = evaluateSecurityPosture(candidate)
+  assert.equal(result.state, 'PARTIAL')
+  assert.ok(result.reasons.some((reason) => reason.includes('adversarial_evals')))
+})
+
+test('zero adversarial cases is partial even when zero of zero passed', () => {
+  const result = evaluateSecurityPosture(posture({ adversarial: { taxonomy: 'No dedicated security gauntlet yet', cases: 0, passed: 0, criticalEscapes: 0, liveModel: false } }))
+  assert.equal(result.state, 'PARTIAL')
+  assert.ok(result.reasons.includes('no_adversarial_cases'))
+})
+
+test('not-applicable baseline control does not invent agent requirements', () => {
+  const candidate = posture()
+  candidate.controls = candidate.controls.map((control) => control.id === 'bounded_execution' ? { ...control, status: 'not_applicable' } : control)
+  const result = evaluateSecurityPosture(candidate)
+  assert.equal(result.state, 'EVIDENCE_READY')
+})
+
 test('self-declared production-security claim is never accepted as verification', () => {
   const result = evaluateSecurityPosture(posture({ claims: { productionSecure: true, promptInjectionSolved: false, certified: false } }))
   assert.equal(result.productionSecurityClaimSupported, false)

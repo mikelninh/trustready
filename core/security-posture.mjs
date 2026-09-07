@@ -67,7 +67,10 @@ export function evaluateSecurityPosture(posture) {
   const points = applicable.reduce((total, control) => total + ({ implemented: 1, partial: 0.5, not_proven: 0 }[control.status] ?? 0), 0)
   const score = applicable.length === 0 ? 0 : Math.round((points / applicable.length) * 100)
   const byId = new Map(posture.controls.map((control) => [control.id, control]))
-  const baselineGaps = [...REQUIRED_BASELINE].filter((id) => !byId.has(id) || byId.get(id).status === 'not_proven')
+  const baselineGaps = [...REQUIRED_BASELINE].filter((id) => {
+    const control = byId.get(id)
+    return !control || !['implemented', 'not_applicable'].includes(control.status)
+  })
   const reasons = []
 
   if (posture.adversarial.criticalEscapes > 0) reasons.push('critical_impact_escape_present')
@@ -80,7 +83,7 @@ export function evaluateSecurityPosture(posture) {
 
   let state = 'EVIDENCE_READY'
   if (posture.adversarial.criticalEscapes > 0) state = 'BLOCK'
-  else if (posture.adversarial.passed !== posture.adversarial.cases || baselineGaps.length > 0) state = 'PARTIAL'
+  else if (posture.adversarial.cases === 0 || posture.adversarial.passed !== posture.adversarial.cases || baselineGaps.length > 0) state = 'PARTIAL'
 
   return {
     state,
