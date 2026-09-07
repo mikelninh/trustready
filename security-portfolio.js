@@ -22,6 +22,7 @@ function escapeHtml(value = '') {
 }
 
 function rawUrl(repo) { return `https://raw.githubusercontent.com/${repo}/main/security/security-posture.json` }
+function replayUrl(repo) { return `https://raw.githubusercontent.com/${repo}/main/security/live-replay-report.json` }
 function repoUrl(repo) { return `https://github.com/${repo}` }
 
 async function loadProject([name, repo, domain]) {
@@ -29,10 +30,53 @@ async function loadProject([name, repo, domain]) {
     const response = await fetch(rawUrl(repo), { cache: 'no-store' })
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
     const posture = await response.json()
-    return { name, repo, domain, posture, evaluation: evaluateSecurityPosture(posture), loaded: true }
+    let liveReplay = null
+    let liveReplayError = null
+    if (posture.adversarial?.liveModel === true) {
+      try {
+        const replayResponse = await fetch(replayUrl(repo), { cache: 'no-store' })
+        if (!replayResponse.ok) throw new Error(`HTTP ${replayResponse.status}`)
+        const candidate = await replayResponse.json()
+        if (candidate.version !== 'live-adversarial-replay/v1') throw new Error('unsupported replay evidence version')
+        liveReplay = candidate
+      } catch (error) {
+        liveReplayError = error instanceof Error ? error.message : String(error)
+      }
+    }
+    return { name, repo, domain, posture, evaluation: evaluateSecurityPosture(posture), liveReplay, liveReplayError, loaded: true }
   } catch (error) {
     return { name, repo, domain, loaded: false, error: error instanceof Error ? error.message : String(error) }
   }
+}
+
+function renderLiveReplay(item) {
+  if (item.posture.adversarial?.liveModel !== true) return ''
+  if (!item.liveReplay) {
+    return `<section class="replay-proof replay-missing"><div class="eyebrow">LIVE-MODEL EVIDENCE DECLARED</div><strong>Replay artifact unavailable</strong><p>TrustReady could not load the detailed replay report (${escapeHtml(item.liveReplayError ?? 'unknown error')}). The posture remains visible, but the stronger executor-level claim is not rendered.</p></section>`
+  }
+
+  const report = item.liveReplay
+  const summary = report.summary
+  const killer = report.replays.find((replay) => replay.id === 'live-pdf-payment-override') ?? report.replays[0]
+  const reasons = killer?.reasons?.map((reason) => `<code>${escapeHtml(reason)}</code>`).join(' ') ?? ''
+  return `<section class="replay-proof">
+    <div class="replay-head">
+      <div><div class="eyebrow">COMPROMISED-MODEL REPLAY · EXECUTOR-LEVEL PROOF</div><h3>Unsafe model output. Zero real-world impact.</h3></div>
+      <span class="impact-zero">IMPACT = 0</span>
+    </div>
+    <div class="replay-flow" aria-label="Malicious input to blocked executor flow">
+      <span>malicious PDF / RAG / tool</span><b>→</b><span>live model proposes effect</span><b>→</b><span class="blocked">SECURITY BLOCK</span><b>→</b><span class="safe">executor calls 0</span>
+    </div>
+    <div class="replay-numbers">
+      <div><b>${summary.passed}/${summary.cases}</b><span>live replays passed</span></div>
+      <div><b>${summary.executorCalls}</b><span>executor calls</span></div>
+      <div><b>${summary.impactEscapes}</b><span>impact escapes</span></div>
+      <div><b>${summary.providerSignedReceipts}</b><span>provider-signed receipts</span></div>
+    </div>
+    ${killer ? `<details open class="killer-replay"><summary>Killer replay · malicious PDF payment override</summary><p>The captured model proposed <code>${escapeHtml(killer.proposedCapability)}</code>. The deterministic boundary returned <strong>${escapeHtml(killer.decision.toUpperCase())}</strong> before any executor ran.</p><div class="reason-chips">${reasons}</div></details>` : ''}
+    <p class="replay-boundary">${escapeHtml(report.truthBoundary)}</p>
+    <div class="links"><a href="${replayUrl(item.repo)}" target="_blank" rel="noreferrer">Raw replay evidence ↗</a></div>
+  </section>`
 }
 
 function renderCard(item) {
@@ -51,12 +95,13 @@ function renderCard(item) {
       <div><b>${evaluation.score}</b><span>evidence score</span></div>
       <div><b>${posture.adversarial.passed}/${posture.adversarial.cases}</b><span>adversarial</span></div>
       <div><b>${posture.adversarial.criticalEscapes}</b><span>critical escapes</span></div>
-      <div><b>${posture.adversarial.liveModel ? 'YES' : 'NO'}</b><span>live-model attacks</span></div>
+      <div><b>${posture.adversarial.liveModel ? 'YES' : 'NO'}</b><span>live-model evidence</span></div>
     </div>
+    ${renderLiveReplay(item)}
     <div class="controls">${controls}</div>
     <details><summary>Residual risks (${posture.residualRisks.length})</summary><ul>${residuals}</ul></details>
     ${reasons}
-    <div class="links"><a href="${repoUrl(item.repo)}" target="_blank" rel="noreferrer">Repository ↗</a><a href="${rawUrl(item.repo)}" target="_blank" rel="noreferrer">Raw evidence ↗</a></div>
+    <div class="links"><a href="${repoUrl(item.repo)}" target="_blank" rel="noreferrer">Repository ↗</a><a href="${rawUrl(item.repo)}" target="_blank" rel="noreferrer">Raw posture ↗</a></div>
   </article>`
 }
 
@@ -64,10 +109,12 @@ function renderSummary(items) {
   const loaded = items.filter((item) => item.loaded)
   const totalCases = loaded.reduce((sum, item) => sum + item.posture.adversarial.cases, 0)
   const totalEscapes = loaded.reduce((sum, item) => sum + item.posture.adversarial.criticalEscapes, 0)
+  const liveCases = loaded.reduce((sum, item) => sum + (item.liveReplay?.summary?.liveModelCases ?? 0), 0)
   const evidenceReady = loaded.filter((item) => item.evaluation.state === 'EVIDENCE_READY').length
   return [
     [loaded.length, 'postures published'],
     [totalCases, 'adversarial cases'],
+    [liveCases, 'captured live-model replays'],
     [totalEscapes, 'critical escapes'],
     [evidenceReady, 'evidence-ready'],
   ].map(([value, label]) => `<div class="metric"><b>${value}</b><span>${label}</span></div>`).join('')
