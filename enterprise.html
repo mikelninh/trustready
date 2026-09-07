@@ -3,45 +3,60 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>TrustReady — Agent Go-Live Gate</title>
-  <meta name="description" content="Evidence-backed GO / CONDITIONAL / NO-GO decisions for AI agents before they touch production systems." />
+  <title>TrustReady — Autonomous Security for AI Agents</title>
+  <meta name="description" content="Connect an AI agent. TrustReady discovers its capability surface, attacks it, measures real executor impact, auto-hardens exploitable paths, retests and gates release." />
   <style>
-    :root{--bg:#0b0d10;--panel:#12161b;--panel2:#171c22;--line:#2a323c;--text:#eef2f5;--muted:#9aa7b4;--good:#7ee2a8;--warn:#f2c66d;--bad:#ff8b8b;--accent:#9fb8ff}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.55 Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}a{color:var(--accent)}header{padding:18px 5vw;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;position:sticky;top:0;background:rgba(11,13,16,.92);backdrop-filter:blur(14px);z-index:5}.brand{font-weight:800}main{max-width:1120px;margin:auto;padding:72px 24px 100px}.eyebrow{font-size:12px;letter-spacing:.14em;color:var(--accent);font-weight:800}.hero h1{font-size:clamp(42px,7vw,76px);line-height:.96;letter-spacing:-.055em;max-width:900px;margin:12px 0 22px}.hero p{font-size:20px;color:var(--muted);max-width:760px}.flow{margin:34px 0;display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.flow div,.card,.metric{border:1px solid var(--line);background:var(--panel);border-radius:14px;padding:18px}.flow b{display:block;margin-bottom:5px}.flow span,.muted{color:var(--muted)}.demo{margin:44px 0}.demo-head{display:flex;justify-content:space-between;gap:20px;align-items:end}.decision{font-size:13px;font-weight:900;letter-spacing:.1em;padding:8px 12px;border-radius:999px;border:1px solid #315b43;color:var(--good)}.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:14px 0}.metric b{display:block;font-size:26px}.metric span{font-size:11px;color:var(--muted);text-transform:uppercase}.proof{border:1px solid #315b43;background:rgba(126,226,168,.05);border-radius:16px;padding:22px;margin-top:14px}.proof h3{margin-top:0}.packages{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:20px}.card h3{margin:0 0 7px}.price{font-size:24px;font-weight:800;margin:12px 0}.card ul{color:var(--muted);padding-left:18px}.truth{margin-top:40px;border-top:1px solid var(--line);padding-top:22px;color:var(--muted)}@media(max-width:800px){.flow,.metrics,.packages{grid-template-columns:1fr 1fr}.demo-head{display:block}.decision{display:inline-block;margin-top:12px}}@media(max-width:520px){.flow,.metrics,.packages{grid-template-columns:1fr}}
+    :root{--bg:#080a0d;--panel:#101419;--panel2:#151a20;--line:#28313b;--text:#f2f5f7;--muted:#97a5b2;--good:#78e3a8;--warn:#f0c96c;--bad:#ff8585;--accent:#a6bcff;--accent2:#bba6ff}*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:radial-gradient(circle at 70% 0,rgba(111,139,255,.09),transparent 32%),var(--bg);color:var(--text);font:15px/1.55 Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}a{color:var(--accent)}header{padding:18px 5vw;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:20px;position:sticky;top:0;background:rgba(8,10,13,.9);backdrop-filter:blur(14px);z-index:5}.brand{font-weight:850;letter-spacing:-.02em}main{max-width:1160px;margin:auto;padding:78px 24px 110px}.eyebrow{font-size:11px;letter-spacing:.15em;color:var(--accent);font-weight:850;text-transform:uppercase}.hero h1{font-size:clamp(46px,7.4vw,82px);line-height:.93;letter-spacing:-.06em;max-width:1000px;margin:12px 0 24px}.hero p{font-size:20px;color:var(--muted);max-width:820px}.hero strong{color:var(--text)}.tagline{display:inline-flex;margin-top:18px;border:1px solid var(--line);border-radius:999px;padding:9px 13px;color:var(--muted);background:rgba(255,255,255,.02)}.loop{margin:42px 0 58px;display:grid;grid-template-columns:repeat(7,1fr);gap:8px}.loop div,.card,.metric,.stage{border:1px solid var(--line);background:var(--panel);border-radius:14px;padding:16px}.loop b{display:block;font-size:12px;margin-bottom:5px}.loop span,.muted{color:var(--muted);font-size:13px}.section{margin-top:70px}.section h2{font-size:clamp(30px,4vw,48px);letter-spacing:-.04em;line-height:1.05;margin:8px 0 12px}.demo-head{display:flex;justify-content:space-between;gap:20px;align-items:end}.decision{font-size:12px;font-weight:900;letter-spacing:.09em;padding:8px 12px;border-radius:999px;border:1px solid #315b43;color:var(--good);white-space:nowrap}.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:18px 0}.metric b{display:block;font-size:30px;letter-spacing:-.04em}.metric span{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}.autofix{border:1px solid #35534a;background:linear-gradient(135deg,rgba(120,227,168,.06),rgba(166,188,255,.04));border-radius:18px;padding:26px;margin-top:18px}.autofix h3{font-size:25px;letter-spacing:-.03em;margin:4px 0 10px}.before-after{display:grid;grid-template-columns:1fr auto 1fr;align-items:stretch;gap:12px;margin:22px 0}.stage h4{margin:0 0 8px}.stage.before{border-color:#5a3737}.stage.after{border-color:#315b43}.big{font-size:42px;font-weight:850;line-height:1;letter-spacing:-.05em}.bad{color:var(--bad)}.good{color:var(--good)}.arrow{align-self:center;color:var(--accent);font-size:24px}.patch{border:1px dashed #526170;border-radius:13px;padding:16px;margin:16px 0;background:rgba(255,255,255,.015)}.patch code{display:block;color:#d7e0e8;margin-top:4px;white-space:normal}.cases{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:14px}.case{border:1px solid var(--line);border-radius:12px;padding:14px;background:var(--panel2)}.case b{display:block;margin-bottom:4px}.case span{font-size:12px;color:var(--muted)}.proof{border:1px solid #315b43;background:rgba(126,226,168,.04);border-radius:16px;padding:22px;margin-top:16px}.proof h3{margin:5px 0 8px}.packages{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:20px}.card h3{margin:0 0 7px}.price{font-size:23px;font-weight:850;margin:12px 0}.card ul{color:var(--muted);padding-left:18px}.truth{margin-top:58px;border-top:1px solid var(--line);padding-top:24px;color:var(--muted)}.source-links{margin-top:14px;font-size:13px}.status-note{color:var(--muted);font-size:13px}@media(max-width:980px){.loop{grid-template-columns:repeat(4,1fr)}.packages{grid-template-columns:1fr 1fr}}@media(max-width:720px){.loop,.metrics,.cases{grid-template-columns:1fr 1fr}.before-after{grid-template-columns:1fr}.arrow{transform:rotate(90deg);justify-self:center}.demo-head{display:block}.decision{display:inline-block;margin-top:12px}}@media(max-width:500px){.loop,.metrics,.cases,.packages{grid-template-columns:1fr}}
   </style>
 </head>
 <body>
-<header><div class="brand">TrustReady · Agent Go-Live Gate</div><div><a href="./security-portfolio.html">Security evidence</a></div></header>
+<header><div class="brand">TrustReady · Autonomous Agent Security</div><div><a href="./security-portfolio.html">Security evidence</a></div></header>
 <main>
   <section class="hero">
-    <div class="eyebrow">FOR AI, SECURITY & COMPLIANCE TEAMS</div>
-    <h1>Can this AI agent safely go live?</h1>
-    <p>Connect one agent. TrustReady checks identity, tenant isolation, sensitive data, tool permissions, approvals, runtime limits, auditability, adversarial evidence, supply chain and incident readiness — then returns <strong>GO, CONDITIONAL or NO-GO</strong> with exact remediation.</p>
+    <div class="eyebrow">100% AUTOMATED TECHNICAL SECURITY LOOP</div>
+    <h1>It doesn’t just find the exploit. It closes the path and proves the fix.</h1>
+    <p><strong>Connect an agent.</strong> TrustReady discovers what it can do, generates attacks against that capability surface, measures whether an unauthorized effect actually reaches an executor, derives the smallest supported hardening patch, retests the exact attack and gates release.</p>
+    <div class="tagline">Connect → Attack → Fix → Prove → Ship. Automatically.</div>
   </section>
 
-  <section class="flow">
-    <div><b>1 · Connect</b><span>Declare agent, data and tools.</span></div>
-    <div><b>2 · Attack</b><span>Run adversarial and compromised-model cases.</span></div>
-    <div><b>3 · Enforce</b><span>Block unsafe effects outside the model.</span></div>
-    <div><b>4 · Prove</b><span>Export release and incident evidence.</span></div>
+  <section class="loop" aria-label="Autonomous security loop">
+    <div><b>01 · Discover</b><span>Capabilities, tools, data, tenants.</span></div>
+    <div><b>02 · Attack</b><span>Generate agent-specific attacks.</span></div>
+    <div><b>03 · Exploit</b><span>Run them against the real gateway.</span></div>
+    <div><b>04 · Measure</b><span>Count real executor impact.</span></div>
+    <div><b>05 · Auto-fix</b><span>Derive bounded control changes.</span></div>
+    <div><b>06 · Retest</b><span>Replay exact failures.</span></div>
+    <div><b>07 · Gate</b><span>TECHNICAL_GO or NO_GO.</span></div>
   </section>
 
-  <section class="demo">
-    <div class="demo-head"><div><div class="eyebrow">LIVE SYNTHETIC BUYER DEMO</div><h2>ACME Support Copilot</h2><div class="muted">The report below is loaded from the same machine-readable evidence used by CI.</div></div><span id="decision" class="decision">LOADING</span></div>
+  <section class="section">
+    <div class="demo-head">
+      <div><div class="eyebrow">LIVE REPRODUCIBLE AUTONOMOUS LOOP</div><h2>Watch an unsafe agent harden itself.</h2><div class="muted">This page loads the same machine-readable report regenerated and diff-checked by CI.</div></div>
+      <span id="auto-decision" class="decision">LOADING</span>
+    </div>
+    <div id="auto-metrics" class="metrics"></div>
+    <div id="autofix" class="autofix"><h3>Loading attack → fix → retest evidence…</h3></div>
+  </section>
+
+  <section class="section">
+    <div class="demo-head"><div><div class="eyebrow">ENTERPRISE RELEASE EVIDENCE</div><h2>Separate technical containment from enterprise readiness.</h2><div class="muted">The broader gate still checks identity, tenant isolation, sensitive data, approvals, auditability, supply chain and incident readiness.</div></div><span id="decision" class="decision">LOADING</span></div>
     <div id="metrics" class="metrics"></div>
-    <div id="proof" class="proof"><h3>Loading evidence…</h3></div>
+    <div id="proof" class="proof"><h3>Loading compromised-model evidence…</h3></div>
   </section>
 
-  <section>
-    <div class="eyebrow">HOW WE MONETISE IT</div>
-    <h2>Start with one agent. Expand into continuous assurance.</h2>
+  <section class="section">
+    <div class="eyebrow">SELF-SERVICE BUSINESS MODEL</div>
+    <h2>Charge for agents continuously protected, not consulting hours.</h2>
+    <p class="muted">Pricing below is a product hypothesis to validate with real buyers. Payment never changes a security result.</p>
     <div class="packages">
-      <article class="card"><h3>Go-Live Assessment</h3><div class="price">€7.5k–15k</div><ul><li>Threat model</li><li>Attack suite</li><li>GO / CONDITIONAL / NO-GO</li><li>Remediation plan</li></ul></article>
-      <article class="card"><h3>Secure Agent Pilot</h3><div class="price">€20k–50k</div><ul><li>Runtime security integration</li><li>Approvals + tenant boundaries</li><li>Audit + replay</li><li>Production gate</li></ul></article>
-      <article class="card"><h3>Continuous Assurance</h3><div class="price">€2.5k–10k/mo</div><ul><li>Release-time attacks</li><li>Posture drift</li><li>Incident evidence</li><li>Security/compliance exports</li></ul></article>
+      <article class="card"><h3>Free</h3><div class="price">€0</div><ul><li>1 public agent</li><li>Basic capability scan</li><li>Limited attack set</li><li>Public evidence</li></ul></article>
+      <article class="card"><h3>Pro</h3><div class="price">€299 / agent / mo</div><ul><li>Private agents</li><li>Attack → fix → retest</li><li>CI release gate</li><li>Evidence history</li></ul></article>
+      <article class="card"><h3>Team</h3><div class="price">€1k–3k / mo</div><ul><li>Agent fleet</li><li>Shared policies</li><li>Continuous regression</li><li>Runtime events</li></ul></article>
+      <article class="card"><h3>Enterprise</h3><div class="price">€25k–150k+ / yr</div><ul><li>SSO + SIEM</li><li>Private runners / VPC</li><li>Central policy</li><li>Enterprise evidence packs</li></ul></article>
     </div>
   </section>
 
-  <div class="truth"><strong>Truth boundary:</strong> GO means the configured engineering release requirements are evidenced. It is not a certification, legal opinion, penetration-test substitute or guarantee that a system is secure.</div>
+  <div class="truth"><strong>Truth boundary:</strong> the autonomous v1 is fully automated over a supplied agent manifest and its generated deterministic attack set. It does not yet auto-discover every arbitrary enterprise environment, is not legal compliance certification, cannot prove the absence of unknown vulnerabilities, and does not replace independent security review for high-consequence production systems.</div>
 </main>
 <script type="module" src="./enterprise.js"></script>
 </body>
