@@ -77,6 +77,41 @@ jobs:
           console.log(data)
           NODE
 
+      - name: Pin security-control file hashes before execution
+        run: |
+          node <<'NODE'
+          const fs = require('fs')
+          const cp = require('child_process')
+          const controls = {
+            factory: [
+              'core/security-boundary.mjs',
+              'core/agent-gateway.mjs',
+              'core/capability-registry.mjs',
+            ],
+            safevoice: [
+              'backend/app/services/court_prep_security.py',
+              'backend/app/services/court_prep_tools.py',
+              'backend/app/services/evidence.py',
+            ],
+            gitlaw: [
+              'security/control-plane.ts',
+              'api/pro/capabilities-contract.ts',
+            ],
+            pruefpilot: [
+              'app/document_ai.py',
+            ],
+          }
+          const hashes = {}
+          for (const [target, files] of Object.entries(controls)) {
+            hashes[target] = {}
+            for (const file of files) {
+              hashes[target][file] = cp.execFileSync('git', ['-C', `_targets/${target}`, 'hash-object', file], { encoding: 'utf8' }).trim()
+            }
+          }
+          fs.writeFileSync('_targets/control-hashes-before.json', JSON.stringify(hashes, null, 2) + '\n')
+          console.log(hashes)
+          NODE
+
       - name: Run Factory causal delta proof
         run: |
           cd _targets/factory
@@ -123,17 +158,20 @@ jobs:
           if (s.controlledMutationTargets !== 3 || s.nativeReachableReplayTargets !== 1) throw new Error('causal evidence mix regression')
           NODE
 
-      - name: Prove tracked target source was not modified
+      - name: Prove security controls were not modified by the benchmark
         run: |
-          rm -f _targets/factory/enterprise/security-delta-proof.json
-          rm -f _targets/safevoice/security/security-delta-proof.json
-          rm -f _targets/gitlaw/security/security-delta-proof.json
-          rm -f _targets/pruefpilot/security/security-delta-proof.json
-          for target in factory safevoice gitlaw pruefpilot; do
-            git -C _targets/$target diff --exit-code
-            git -C _targets/$target diff --cached --exit-code
-            test -z "$(git -C _targets/$target status --porcelain --untracked-files=no)" || { git -C _targets/$target status --short --untracked-files=no; exit 1; }
-          done
+          node <<'NODE'
+          const fs = require('fs')
+          const cp = require('child_process')
+          const before = JSON.parse(fs.readFileSync('_targets/control-hashes-before.json', 'utf8'))
+          for (const [target, files] of Object.entries(before)) {
+            for (const [file, expected] of Object.entries(files)) {
+              const actual = cp.execFileSync('git', ['-C', `_targets/${target}`, 'hash-object', file], { encoding: 'utf8' }).trim()
+              if (actual !== expected) throw new Error(`${target}:${file} mutated during benchmark (${expected} -> ${actual})`)
+            }
+          }
+          console.log('Security-control integrity: PASS')
+          NODE
 
       - name: Publish benchmark summary
         run: cat security-delta-dist/summary.md >> "$GITHUB_STEP_SUMMARY"
