@@ -1,0 +1,54 @@
+name: Daybreak Red qualification lab
+
+on:
+  pull_request:
+    paths:
+      - 'red-lab/**'
+      - 'docs/DAYBREAK_RED_QUALIFICATION.md'
+      - '.github/workflows/daybreak-red-lab.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'red-lab/**'
+      - 'docs/DAYBREAK_RED_QUALIFICATION.md'
+      - '.github/workflows/daybreak-red-lab.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run Red Lab tests
+        run: node --test red-lab/lab.test.mjs
+      - name: Build evidence report
+        run: node red-lab/run.mjs
+      - name: Assert evidence contract
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          const r = JSON.parse(fs.readFileSync('red-lab/evidence/report.json', 'utf8'));
+          if (r.schema !== 'trustready-red-lab-report/v1') process.exit(1);
+          if (r.summary?.verdict !== 'LAB_PROOF_PASS') process.exit(1);
+          if (r.claimBoundary?.daybreakRedApprovalClaimed !== false) process.exit(1);
+          if (r.claimBoundary?.qualificationEvidenceOnly !== true) process.exit(1);
+          if (r.scope?.networkAccess !== false) process.exit(1);
+          if (r.summary?.exploitBeforeFixCases !== 2) process.exit(1);
+          if (r.summary?.patchedCases !== 2) process.exit(1);
+          if (r.summary?.scopeEscapeCasesBlocked !== 1) process.exit(1);
+          console.log('DAYBREAK RED QUALIFICATION LAB PASS');
+          NODE
+      - name: Upload qualification evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: daybreak-red-qualification-evidence
+          path: red-lab/evidence/report.json
+          if-no-files-found: error
