@@ -34,7 +34,8 @@ jobs:
             https://mikelninh.github.io/trustready/enterprise.html \
             -o /tmp/enterprise.html
           grep -q 'Watch an unsafe agent harden itself' /tmp/enterprise.html
-          grep -q 'Connect.*Attack.*Fix.*Prove.*Ship' /tmp/enterprise.html
+          grep -q 'SafeVoice: prove which path is actually reachable' /tmp/enterprise.html
+          grep -q 'Connect.*Resolve.*Attack.*Fix.*Prove.*Ship' /tmp/enterprise.html
 
       - name: Verify all published project postures are reachable and parseable
         shell: bash
@@ -69,7 +70,9 @@ jobs:
             if (p.adversarial?.criticalEscapes !== 0) throw new Error(`${file}: critical impact escape present`)
             if (p.claims?.productionSecure || p.claims?.promptInjectionSolved || p.claims?.certified) throw new Error(`${file}: unsupported claim present`)
           }
-          console.log(`Live evidence reachable: ${files.length}/8 postures`)
+          const safevoice = JSON.parse(fs.readFileSync(`${path}/safevoice.json`, 'utf8'))
+          if (safevoice.adversarial?.cases !== 2 || safevoice.adversarial?.passed !== 2) throw new Error('SafeVoice dedicated adversarial evidence missing')
+          console.log(`Live evidence reachable: ${files.length}/8 postures; SafeVoice=${safevoice.adversarial.passed}/${safevoice.adversarial.cases}`)
           NODE
 
       - name: Verify compromised-model replay evidence is live and zero-impact
@@ -111,6 +114,35 @@ jobs:
           if (report.release?.decision !== 'TECHNICAL_GO') throw new Error(`unexpected technical release decision: ${report.release?.decision}`)
           if (!/not legal compliance certification/i.test(report.truthBoundary ?? '')) throw new Error('autonomous-loop truth boundary missing')
           console.log(`Autonomous loop: ${report.before.impactEscapes} escapes before -> ${report.after.impactEscapes} after; executor calls after=${report.after.executorCalls}; ${report.release.decision}`)
+          NODE
+
+      - name: Verify real-repo SafeVoice reachability proof is live and scoped
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location \
+            --retry 6 --retry-delay 2 --retry-all-errors \
+            https://raw.githubusercontent.com/mikelninh/digital-worker-factory/main/enterprise/safevoice-reachability-proof.json \
+            -o /tmp/safevoice-reachability-proof.json
+          curl --fail --silent --show-error --location \
+            --retry 6 --retry-delay 2 --retry-all-errors \
+            https://raw.githubusercontent.com/mikelninh/safevoice/main/security/agent-boundary-report.json \
+            -o /tmp/safevoice-agent-boundary.json
+          node <<'NODE'
+          const fs = require('fs')
+          const proof = JSON.parse(fs.readFileSync('/tmp/safevoice-reachability-proof.json', 'utf8'))
+          const native = JSON.parse(fs.readFileSync('/tmp/safevoice-agent-boundary.json', 'utf8'))
+          if (proof.version !== 'repository-reachability-proof/v1') throw new Error('invalid reachability proof version')
+          if (proof.target?.repository !== 'mikelninh/safevoice') throw new Error('wrong reachability target')
+          if (proof.chain?.entrypoint !== 'backend/app/services/court_prep_agent.py') throw new Error('wrong SafeVoice entrypoint')
+          if (proof.chain?.reachableTools?.length !== 8) throw new Error('SafeVoice reachable tool surface drift')
+          if (!proof.chain?.isolatedSurfaces?.includes('safevoice_mcp/server.py')) throw new Error('SafeVoice MCP isolation missing')
+          if (!proof.chain?.effectPaths?.some((p) => p.tool === 're_archive_urls' && p.sink?.kind === 'network_effect')) throw new Error('SafeVoice network effect path missing')
+          if (proof.nativeRuntimeEvidence?.adversarialCases !== 2 || proof.nativeRuntimeEvidence?.passed !== 2 || proof.nativeRuntimeEvidence?.criticalEscapesAfterBoundary !== 0 || proof.nativeRuntimeEvidence?.exploitBeforeFix !== true) throw new Error('SafeVoice runtime proof regression')
+          if (native.summary?.adversarialCases !== 2 || native.summary?.passed !== 2 || native.summary?.criticalEscapesAfterBoundary !== 0) throw new Error('SafeVoice native report mismatch')
+          if (proof.release?.decision !== 'TECHNICAL_GO' || proof.release?.scopeType !== 'entrypoint_scoped') throw new Error('SafeVoice scoped release regression')
+          if (!/scoped/i.test(proof.truthBoundary ?? '')) throw new Error('SafeVoice scope truth boundary missing')
+          console.log(`SafeVoice reachability: ${proof.chain.reachableTools.length} tools; isolated MCP=${proof.chain.isolatedSurfaces.length}; native=${proof.nativeRuntimeEvidence.passed}/${proof.nativeRuntimeEvidence.adversarialCases}; escapes=${proof.nativeRuntimeEvidence.criticalEscapesAfterBoundary}; ${proof.release.decision}`)
           NODE
 
       - name: Verify enterprise go-live report is live and internally consistent
