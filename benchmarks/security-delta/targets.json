@@ -1,0 +1,39 @@
+{
+  "version": "security-delta-targets/v1",
+  "thesis": "Across structurally different AI systems, does restoring a deterministic security boundary reduce measured unauthorized impact for the same attack inputs while preserving legitimate behavior?",
+  "targets": [
+    {
+      "id": "factory",
+      "repository": "mikelninh/digital-worker-factory",
+      "ref": "main",
+      "architecture": "Cross-domain agent runtime",
+      "proofType": "controlled_mutation_with_known_holdout_split",
+      "evidencePath": "enterprise/security-delta-proof.json"
+    },
+    {
+      "id": "safevoice",
+      "repository": "mikelninh/safevoice",
+      "ref": "main",
+      "architecture": "Scoped case agent with network egress",
+      "proofType": "native_reachable_pre_boundary_replay",
+      "evidencePath": "security/security-delta-proof.json"
+    },
+    {
+      "id": "gitlaw",
+      "repository": "mikelninh/gitlaw",
+      "ref": "main",
+      "architecture": "Multi-entrypoint legal agent system",
+      "proofType": "controlled_boundary_bypass_with_holdout",
+      "evidencePath": "security/security-delta-proof.json"
+    },
+    {
+      "id": "pruefpilot",
+      "repository": "mikelninh/pruefpilot",
+      "ref": "main",
+      "architecture": "Document AI quarantine pipeline",
+      "proofType": "controlled_scan_bypass_with_holdout",
+      "evidencePath": "security/security-delta-proof.json"
+    }
+  ],
+  "truthBoundary": "The benchmark measures causal security delta over named controlled scenarios and exact target revisions. Three baselines are deliberately weakened test-only mutants or synthetic fixtures; SafeVoice contributes scoped native pre-boundary reachable-path evidence. A PASS is not an estimate of real-world attack probability, a penetration test, certification, production-security claim, or proof that unknown vulnerabilities do not exist."
+}

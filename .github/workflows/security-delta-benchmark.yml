@@ -1,0 +1,182 @@
+name: security-delta-benchmark-v1
+
+on:
+  pull_request:
+    paths:
+      - 'benchmarks/security-delta/**'
+      - '.github/workflows/security-delta-benchmark.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'benchmarks/security-delta/**'
+      - '.github/workflows/security-delta-benchmark.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout TrustReady
+        uses: actions/checkout@v4
+
+      - name: Checkout Digital Worker Factory
+        uses: actions/checkout@v4
+        with:
+          repository: mikelninh/digital-worker-factory
+          ref: main
+          path: _targets/factory
+
+      - name: Checkout SafeVoice
+        uses: actions/checkout@v4
+        with:
+          repository: mikelninh/safevoice
+          ref: main
+          path: _targets/safevoice
+
+      - name: Checkout GitLaw
+        uses: actions/checkout@v4
+        with:
+          repository: mikelninh/gitlaw
+          ref: main
+          path: _targets/gitlaw
+
+      - name: Checkout PrüfPilot
+        uses: actions/checkout@v4
+        with:
+          repository: mikelninh/pruefpilot
+          ref: main
+          path: _targets/pruefpilot
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Capture exact engine and target revisions
+        run: |
+          node <<'NODE'
+          const fs = require('fs')
+          const cp = require('child_process')
+          const sha = (dir) => cp.execFileSync('git', ['-C', dir, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
+          const data = {
+            engine: { repository: 'mikelninh/trustready', commit: sha('.') },
+            targets: {
+              factory: { repository: 'mikelninh/digital-worker-factory', commit: sha('_targets/factory') },
+              safevoice: { repository: 'mikelninh/safevoice', commit: sha('_targets/safevoice') },
+              gitlaw: { repository: 'mikelninh/gitlaw', commit: sha('_targets/gitlaw') },
+              pruefpilot: { repository: 'mikelninh/pruefpilot', commit: sha('_targets/pruefpilot') },
+            },
+          }
+          fs.writeFileSync('_targets/metadata.json', JSON.stringify(data, null, 2) + '\n')
+          console.log(data)
+          NODE
+
+      - name: Pin security-control file hashes before execution
+        run: |
+          node <<'NODE'
+          const fs = require('fs')
+          const cp = require('child_process')
+          const controls = {
+            factory: [
+              'core/security-boundary.mjs',
+              'core/agent-gateway.mjs',
+              'core/capability-registry.mjs',
+            ],
+            safevoice: [
+              'backend/app/services/court_prep_security.py',
+              'backend/app/services/court_prep_tools.py',
+              'backend/app/services/evidence.py',
+            ],
+            gitlaw: [
+              'security/control-plane.ts',
+              'api/pro/capabilities-contract.ts',
+            ],
+            pruefpilot: [
+              'app/document_ai.py',
+            ],
+          }
+          const hashes = {}
+          for (const [target, files] of Object.entries(controls)) {
+            hashes[target] = {}
+            for (const file of files) {
+              hashes[target][file] = cp.execFileSync('git', ['-C', `_targets/${target}`, 'hash-object', file], { encoding: 'utf8' }).trim()
+            }
+          }
+          fs.writeFileSync('_targets/control-hashes-before.json', JSON.stringify(hashes, null, 2) + '\n')
+          console.log(hashes)
+          NODE
+
+      - name: Run Factory causal delta proof
+        run: |
+          cd _targets/factory
+          node --test enterprise/security-delta.test.mjs
+          node enterprise/security-delta.mjs
+
+      - name: Run SafeVoice native reachable-path proof
+        run: |
+          python -m venv /tmp/safevoice-venv
+          /tmp/safevoice-venv/bin/pip install --disable-pip-version-check -r _targets/safevoice/backend/requirements.txt
+          cd _targets/safevoice
+          PYTHONPATH=backend /tmp/safevoice-venv/bin/pytest -q backend/tests/test_agent_security_boundary.py backend/tests/test_agent_security_exploit_replay.py
+          /tmp/safevoice-venv/bin/python security/security_delta.py
+
+      - name: Run GitLaw causal delta proof
+        run: |
+          cd _targets/gitlaw
+          npm ci
+          npm run security:delta
+
+      - name: Run PrüfPilot causal delta proof
+        run: |
+          python -m venv /tmp/pruefpilot-venv
+          /tmp/pruefpilot-venv/bin/pip install --disable-pip-version-check -r _targets/pruefpilot/requirements.txt pytest
+          cd _targets/pruefpilot
+          /tmp/pruefpilot-venv/bin/pytest -q tests/test_security_delta.py
+          /tmp/pruefpilot-venv/bin/python security/security_delta.py
+
+      - name: Build aggregate benchmark
+        run: node benchmarks/security-delta/build.mjs --root _targets --metadata _targets/metadata.json --out security-delta-dist
+
+      - name: Assert aggregate release contract
+        run: |
+          node <<'NODE'
+          const r = require('./security-delta-dist/benchmark.json')
+          const s = r.summary
+          if (r.version !== 'security-delta-benchmark/v1') throw new Error('wrong benchmark schema')
+          if (s.verdict !== 'PASS') throw new Error(`benchmark verdict=${s.verdict}`)
+          if (s.repositories !== 4 || s.architectureFamilies !== 4) throw new Error('target diversity regression')
+          if (s.attackCases < 14) throw new Error('attack coverage regression')
+          if (s.beforeImpactEscapes !== s.attackCases || s.afterImpactEscapes !== 0) throw new Error('impact delta regression')
+          if (s.holdoutCases < 6 || s.holdoutContained !== s.holdoutCases) throw new Error('holdout regression')
+          if (s.benignCases < 7 || s.benignRetained !== s.benignCases) throw new Error('benign retention regression')
+          if (s.controlledMutationTargets !== 3 || s.nativeReachableReplayTargets !== 1) throw new Error('causal evidence mix regression')
+          NODE
+
+      - name: Prove security controls were not modified by the benchmark
+        run: |
+          node <<'NODE'
+          const fs = require('fs')
+          const cp = require('child_process')
+          const before = JSON.parse(fs.readFileSync('_targets/control-hashes-before.json', 'utf8'))
+          for (const [target, files] of Object.entries(before)) {
+            for (const [file, expected] of Object.entries(files)) {
+              const actual = cp.execFileSync('git', ['-C', `_targets/${target}`, 'hash-object', file], { encoding: 'utf8' }).trim()
+              if (actual !== expected) throw new Error(`${target}:${file} mutated during benchmark (${expected} -> ${actual})`)
+            }
+          }
+          console.log('Security-control integrity: PASS')
+          NODE
+
+      - name: Publish benchmark summary
+        run: cat security-delta-dist/summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: trustready-security-delta-benchmark-v1
+          path: security-delta-dist
