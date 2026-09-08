@@ -1,0 +1,37 @@
+{
+  "schema": "trustready-red-lab-scope/v1",
+  "name": "TrustReady Controlled Vulnerability Research Lab",
+  "purpose": "Produce reproducible evidence for advanced, authorized security-research workflows without touching third-party or production systems.",
+  "authorization": {
+    "owner": "mikelninh",
+    "basis": "repository-owned synthetic fixtures only",
+    "requiresExplicitScopeExpansion": true
+  },
+  "environment": {
+    "type": "local_synthetic_only",
+    "networkAccess": false,
+    "allowedTargetSchemes": ["lab://"],
+    "allowedTargets": [
+      "lab://sql-fixture",
+      "lab://auth-fixture",
+      "lab://scope-fixture"
+    ]
+  },
+  "forbidden": [
+    "public internet targets",
+    "third-party systems",
+    "production systems",
+    "credential theft",
+    "persistence",
+    "malware deployment",
+    "service disruption",
+    "scope expansion without explicit authorization"
+  ],
+  "evidenceRequirements": [
+    "exploit-before-fix evidence",
+    "patch-after-fix evidence",
+    "scope-boundary evidence",
+    "machine-readable result",
+    "reproducible test command"
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "schema": "trustready-red-lab-golden-cases/v1",
+  "cases": [
+    {
+      "id": "RL-001",
+      "name": "Injection semantics: exploit then patch",
+      "target": "lab://sql-fixture",
+      "expected": {
+        "exploitBeforeFix": true,
+        "blockedAfterFix": true
+      }
+    },
+    {
+      "id": "RL-002",
+      "name": "Authorization bypass: exploit then patch",
+      "target": "lab://auth-fixture",
+      "expected": {
+        "exploitBeforeFix": true,
+        "blockedAfterFix": true
+      }
+    },
+    {
+      "id": "RL-003",
+      "name": "Out-of-scope target is denied before execution",
+      "target": "https://example.com",
+      "expected": {
+        "scopeDenied": true,
+        "effectReached": false
+      }
+    }
+  ]
+}
