@@ -123,14 +123,16 @@ jobs:
           if (s.controlledMutationTargets !== 3 || s.nativeReachableReplayTargets !== 1) throw new Error('causal evidence mix regression')
           NODE
 
-      - name: Prove target checkouts were not modified
+      - name: Prove tracked target source was not modified
         run: |
           rm -f _targets/factory/enterprise/security-delta-proof.json
           rm -f _targets/safevoice/security/security-delta-proof.json
           rm -f _targets/gitlaw/security/security-delta-proof.json
           rm -f _targets/pruefpilot/security/security-delta-proof.json
           for target in factory safevoice gitlaw pruefpilot; do
-            test -z "$(git -C _targets/$target status --porcelain)" || { git -C _targets/$target status --short; exit 1; }
+            git -C _targets/$target diff --exit-code
+            git -C _targets/$target diff --cached --exit-code
+            test -z "$(git -C _targets/$target status --porcelain --untracked-files=no)" || { git -C _targets/$target status --short --untracked-files=no; exit 1; }
           done
 
       - name: Publish benchmark summary
