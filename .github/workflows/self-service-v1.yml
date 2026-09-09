@@ -46,3 +46,29 @@ jobs:
           if(r.release?.decision==='TECHNICAL_GO') throw new Error('source-only scan overclaimed runtime GO')
           if(!/not a penetration test/i.test(r.truthBoundary)) throw new Error('truth boundary missing')
           NODE
+
+  owned-repo-canary:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout TrustReady
+        uses: actions/checkout@v4
+      - name: Checkout pinned owned agent system
+        uses: actions/checkout@v4
+        with:
+          repository: mikelninh/digital-worker-factory
+          ref: 7712e3e3ec215fbbabd055a652433d138d1015c7
+          path: _canary/factory
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Run real connected Security Delta proof
+        run: |
+          node self-service/connected-runner.mjs _canary/factory > /tmp/canary.json
+          node - <<'NODE'
+          const r=require('/tmp/canary.json')
+          if(r.status!=='TECHNICAL_GO') throw new Error(`canary status=${r.status}`)
+          if(r.recipe!=='node-enterprise-security-delta') throw new Error(`unexpected recipe=${r.recipe}`)
+          if(r.validation?.metrics?.afterImpactEscapes!==0) throw new Error('canary impact escape')
+          if(r.validation?.metrics?.benignCases!==r.validation?.metrics?.benignRetained) throw new Error('canary benign regression')
+          console.log('OWNED REPO CANARY PASS:', r.validation.metrics)
+          NODE
