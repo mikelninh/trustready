@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { buildProspectSecuritySignalV2, precisionMetrics } from './engine.mjs'
+import { buildProspectSecuritySignalV2, precisionMetrics } from './engine-v2.mjs'
 
 const snap=(files)=>({repository_url:'https://github.com/acme/app',revision:'abc123',files})
 
@@ -14,6 +14,11 @@ test('recognizes loop-bound selector dispatch',()=>{
   const s=buildProspectSecuritySignalV2(snap({'engine.py':`async for tool in iter_to_aiter(message.tool_calls):\n    if tool.tool_type == 'function':\n        res = await session.call_tool(tool.name, arguments=tool.arguments or {})`}),{segment:'agent framework'})
   assert.equal(s.classification,'REVIEW_SIGNAL')
   assert.equal(s.evidence.selectorFlows[0].selectorKind,'loop_item')
+})
+
+test('searches forward past earlier dispatcher definition',()=>{
+  const s=buildProspectSecuritySignalV2(snap({'main.py':`def call_tool(function_name, args):\n    func = available_functions.get(function_name)\n    return func(**args)\n\ndef run(response_message):\n    for tool_call in response_message.tool_calls:\n        function_name = tool_call.function.name\n        args = tool_call.function.arguments\n        return call_tool(function_name, args)`}),{segment:'application'})
+  assert.equal(s.classification,'PROOF_GAP')
 })
 
 test('local approval between selector and sink downgrades',()=>{
