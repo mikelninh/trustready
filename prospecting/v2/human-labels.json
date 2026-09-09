@@ -1,0 +1,4 @@
+{
+  "capture0x/AdAgent": {"label":"FALSE_POSITIVE","note":"Human-reviewed provider/backend adapter false positive from Batch 3; normalizes model tool calls but does not dispatch the model-selected business effect."},
+  "superagentxai/superagentx": {"label":"UNCERTAIN","note":"Human-reviewed selector-controlled tool dispatch exists in engine.py, but framework semantics may intentionally delegate authorization to handlers/applications. Requires owned-runtime validation before TRUE_SIGNAL."}
+}
