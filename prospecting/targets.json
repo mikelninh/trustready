@@ -1,0 +1,7 @@
+[
+  {"repository":"browser-use/browser-use","segment":"browser agent","why":"Agent drives authenticated browser effects"},
+  {"repository":"browserbase/stagehand","segment":"browser automation","why":"AI-assisted browser actions and extraction"},
+  {"repository":"All-Hands-AI/OpenHands","segment":"coding agent","why":"Agent can execute consequential software-development actions"},
+  {"repository":"ComposioHQ/composio","segment":"tool/action infrastructure","why":"Agents connect to external tools and APIs"},
+  {"repository":"superagentxai/superagentx","segment":"agent framework","why":"Multi-agent framework with tool execution surface"}
+]

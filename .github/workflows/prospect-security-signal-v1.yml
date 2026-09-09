@@ -1,0 +1,53 @@
+name: prospect-security-signal-v1
+
+on:
+  pull_request:
+    paths:
+      - 'prospecting/**'
+      - '.github/workflows/prospect-security-signal-v1.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'prospecting/**'
+      - '.github/workflows/prospect-security-signal-v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Unit tests
+        run: node --test prospecting/lead-engine.test.mjs
+      - name: Passive public-repo batch
+        run: node prospecting/run-first-batch.mjs /tmp/trustready-prospects
+      - name: Verify claim discipline and useful output
+        run: |
+          node - <<'NODE'
+          const fs=require('fs')
+          const p='/tmp/trustready-prospects/prospect-signals.json'
+          const data=JSON.parse(fs.readFileSync(p,'utf8'))
+          if(data.targets!==5) throw new Error(`expected 5 targets, got ${data.targets}`)
+          for(const item of data.results){
+            const s=item.signal
+            if(!s.truthBoundary?.includes('does not execute the target')) throw new Error(`truth boundary missing: ${item.repository}`)
+            const raw=JSON.stringify(item).toLowerCase()
+            for(const bad of ['definitely vulnerable','pay us or','unless you pay','we exploited your']) if(raw.includes(bad)) throw new Error(`coercive/unsupported claim: ${bad}`)
+            if(!s.revision) throw new Error(`missing exact revision: ${item.repository}`)
+          }
+          const actionable=data.results.filter(x=>x.signal.outreach.allowed)
+          console.log('ACTIONABLE SOURCE SIGNALS', actionable.length, '/', data.targets)
+          NODE
+      - name: Upload prospect evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: trustready-prospect-security-signals
+          path: /tmp/trustready-prospects/
+          if-no-files-found: error
