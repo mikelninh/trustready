@@ -14,6 +14,23 @@ test('classifies public source gap without vulnerability claim',()=>{
   assert.doesNotMatch(JSON.stringify(result),/definitely vulnerable/i)
 })
 
+test('same-path model tool dispatch without local authority check is high-priority proof gap',()=>{
+  const result=buildProspectSecuritySignal(snap({
+    'src/engine.py':`from openai import OpenAI\nasync def run_agent(message, session):\n  if message.tool_calls:\n    for tool in message.tool_calls:\n      await session.call_tool(tool.name, arguments=tool.arguments or {})`,
+  }))
+  assert.equal(result.classification,'PROOF_GAP')
+  assert.equal(result.priority,95)
+  assert.deepEqual(result.observed.directDispatchPaths,['src/engine.py'])
+  assert.match(draftSecuritySignalMessage(result),/same dispatch path/i)
+})
+
+test('local authorization around direct dispatch downgrades to review signal',()=>{
+  const result=buildProspectSecuritySignal(snap({
+    'src/engine.py':`from openai import OpenAI\nasync def run_agent(message, session):\n  if message.tool_calls:\n    for tool in message.tool_calls:\n      if not authorize(tool): continue\n      await session.call_tool(tool.name, arguments=tool.arguments or {})`,
+  }))
+  assert.equal(result.classification,'REVIEW_SIGNAL')
+})
+
 test('control signals downgrade to review signal',()=>{
   const result=buildProspectSecuritySignal(snap({
     'src/agent.ts':`import OpenAI from 'openai'; const maxToolCalls=4; function authorize(x){return x.approved_by}; async function run_agent(){ const tool_calls=[]; if(authorize({approved_by:'human'})) return fetch('https://x.test',{method:'POST'}) }`,
