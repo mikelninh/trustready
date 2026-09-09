@@ -100,6 +100,10 @@ export function buildProspectSecuritySignal(snapshot,{repository=null}={}) {
     classification='PROOF_GAP'
     priority=95
     rationale='A same-file source path appears to consume model-selected tool calls and dispatch them to a tool/handler sink without an independently observable approval/authorization/allowlist check in that dispatch path. Runtime controls may still exist elsewhere and must be validated.'
+  } else if(directDispatch.length){
+    classification='REVIEW_SIGNAL'
+    priority=68
+    rationale='A same-file model-to-tool dispatch path is visible together with a local approval/authorization/allowlist signal. The control appears relevant, but runtime enforcement and bypass resistance still require validation.'
   } else if(hasAgent && hasEffect && !independentControl){
     classification='PROOF_GAP'
     priority=70 + Math.min(20, consequential.length*4)
@@ -157,7 +161,12 @@ export function draftSecuritySignalMessage(signal,{name='there'}={}) {
   const direct=(signal.publicEvidence?.directDispatch||[])[0]
   const effects=(signal.observed?.effectClasses||[]).slice(0,3).join(', ')
   const controls=(signal.observed?.controlClasses||[]).join(', ')
-  const directSentence=direct?`The strongest source signal is in ${direct.path}: model-selected tool calls appear to flow to a tool/handler dispatch sink; I could not verify an independent approval/authorization/allowlist check in that same dispatch path.`:`The observed effect surface includes ${effects}.`
+  const directHasBoundary=direct?.localControls?.some(c=>['approval','authorization','allowlist'].includes(c))
+  const directSentence=direct
+    ? directHasBoundary
+      ? `The strongest source signal is in ${direct.path}: model-selected tool calls appear to flow to a tool/handler dispatch sink, with a local control signal (${direct.localControls.join(', ')}) that is worth validating for runtime enforcement.`
+      : `The strongest source signal is in ${direct.path}: model-selected tool calls appear to flow to a tool/handler dispatch sink; I could not verify an independent approval/authorization/allowlist check in that same dispatch path.`
+    : `The observed effect surface includes ${effects}.`
   const controlSentence=controls?`I also saw control signals elsewhere in the repository (${controls}), so I am not treating this as a vulnerability claim.`:'I did not observe a repository-level approval/authorization/allowlist signal in the bounded snapshot.'
   return `Hi ${name},\n\nI ran a passive TrustReady source review on ${repo}. ${directSentence} ${controlSentence}\n\nThis is intentionally a source-level security signal, not a claim that the system is exploitable. The useful next step is to replay the path safely in infrastructure you own and measure whether an unauthorized model/tool proposal can actually reach the effect sink.\n\nIf useful, I can do that as a fixed-scope Security Delta validation: same named attack inputs before/after the boundary, benign-regression checks, and a CI gate if we confirm something actionable.\n\nPotential impact if the path is insufficiently bounded: ${(signal.potentialConsequences||[]).slice(0,2).join('; ') || 'unintended real-world effects'}.\n\nWould a 20-minute technical check be useful?\n\nMichael\nTrustReady`
 }
