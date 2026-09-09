@@ -1,4 +1,4 @@
-import { scanAgentRepositorySnapshot } from './agent-repo-scanner.mjs'
+import { scanAgentRepositorySnapshot } from '../core/agent-repo-scanner.mjs'
 
 export const SELF_SERVICE_VERSION = 'trustready-self-service/v1'
 export const TARGET_PROOF_VERSION = 'security-delta-target-proof/v1'
@@ -95,5 +95,5 @@ export function defaultConfig() {
 }
 
 export function githubWorkflowTemplate() {
-  return `name: trustready-security-delta\n\non:\n  pull_request:\n  push:\n    branches: [main]\n\npermissions:\n  contents: read\n\njobs:\n  security-delta:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - uses: actions/setup-node@v4\n        with:\n          node-version: 24\n      - uses: actions/setup-python@v5\n        with:\n          python-version: '3.12'\n      - name: Run target-owned Security Delta harness\n        run: node node_modules/trustready/self-service/connected-runner.mjs .\n      - name: Verify TrustReady evidence\n        run: node node_modules/trustready/self-service/cli.mjs verify security/security-delta-proof.json\n`
+  return `name: trustready-security-delta\n\non:\n  pull_request:\n  push:\n    branches: [main]\n\npermissions:\n  contents: read\n\njobs:\n  security-delta:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - uses: actions/setup-node@v4\n        with:\n          node-version: 24\n      - uses: actions/setup-python@v5\n        with:\n          python-version: '3.12'\n      # Add your normal dependency install here if the target harness needs it.\n      - name: Fetch TrustReady verifier\n        run: git clone --depth 1 https://github.com/mikelninh/trustready.git \"$RUNNER_TEMP/trustready\"\n      - name: Run target-owned Security Delta harness + verify evidence\n        run: node \"$RUNNER_TEMP/trustready/self-service/connected-runner.mjs\" .\n`
 }
