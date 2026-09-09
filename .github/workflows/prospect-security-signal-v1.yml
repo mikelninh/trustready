@@ -18,7 +18,7 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -28,22 +28,36 @@ jobs:
         run: node --test prospecting/lead-engine.test.mjs
       - name: Passive public-repo batch
         run: node prospecting/run-first-batch.mjs /tmp/trustready-prospects
-      - name: Verify claim discipline and useful output
+      - name: Verify calibration, claim discipline and useful output
         run: |
           node - <<'NODE'
           const fs=require('fs')
-          const p='/tmp/trustready-prospects/prospect-signals.json'
-          const data=JSON.parse(fs.readFileSync(p,'utf8'))
-          if(data.targets!==5) throw new Error(`expected 5 targets, got ${data.targets}`)
+          const path='/tmp/trustready-prospects/prospect-signals.json'
+          const data=JSON.parse(fs.readFileSync(path,'utf8'))
+          const targets=JSON.parse(fs.readFileSync('prospecting/targets.json','utf8'))
+          if(data.targets!==targets.length) throw new Error(`expected ${targets.length} targets, got ${data.targets}`)
           for(const item of data.results){
             const s=item.signal
             if(!s.truthBoundary?.includes('does not execute the target')) throw new Error(`truth boundary missing: ${item.repository}`)
             const raw=JSON.stringify(item).toLowerCase()
             for(const bad of ['definitely vulnerable','pay us or','unless you pay','we exploited your']) if(raw.includes(bad)) throw new Error(`coercive/unsupported claim: ${bad}`)
             if(!s.revision) throw new Error(`missing exact revision: ${item.repository}`)
+            if(!s.outreach.allowed && item.message!==null) throw new Error(`draft created for non-outreach signal: ${item.repository}`)
           }
-          const actionable=data.results.filter(x=>x.signal.outreach.allowed)
-          console.log('ACTIONABLE SOURCE SIGNALS', actionable.length, '/', data.targets)
+          for(const target of targets){
+            const item=data.results.find(x=>x.repository===target.repository)
+            if(!item) throw new Error(`missing target result: ${target.repository}`)
+            if(target.calibrationExpectation && item.signal.classification!==target.calibrationExpectation){
+              throw new Error(`calibration regression ${target.repository}: expected ${target.calibrationExpectation}, got ${item.signal.classification}`)
+            }
+            if(target.calibrationExpectationNot && item.signal.classification===target.calibrationExpectationNot){
+              throw new Error(`calibration regression ${target.repository}: must not be ${target.calibrationExpectationNot}`)
+            }
+          }
+          const counts=data.results.reduce((m,x)=>(m[x.signal.classification]=(m[x.signal.classification]||0)+1,m),{})
+          const reviewQueue=data.results.filter(x=>['PROOF_GAP','REVIEW_SIGNAL'].includes(x.signal.classification))
+          console.log('CLASSIFICATIONS',counts)
+          console.log('HUMAN REVIEW QUEUE',reviewQueue.length,'/',data.targets)
           NODE
       - name: Upload prospect evidence
         uses: actions/upload-artifact@v4
