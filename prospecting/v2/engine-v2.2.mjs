@@ -34,6 +34,20 @@ function dictEntries(content, registry) {
   return out
 }
 
+function anyDictAssignments(content){
+  const out=[]
+  const re=/\b([A-Za-z_$][\w$]*)\s*=\s*\{([\s\S]{0,2200}?)\}/g
+  let m
+  while((m=re.exec(content))){
+    const entries=[]
+    const keyRe=/['\"]([^'\"]+)['\"]\s*:\s*([A-Za-z_$][\w$.]*)/g
+    let k
+    while((k=keyRe.exec(m[2]))) entries.push({name:k[1],implementation:k[2],line:lineNo(content,m.index)})
+    if(entries.length) out.push({variable:m[1],entries,line:lineNo(content,m.index)})
+  }
+  return out
+}
+
 function registerToolEntries(content){
   const out=[]
   const re=/\bregister_tool\s*\(\s*['\"]([^'\"]+)['\"]\s*,\s*([A-Za-z_$][\w$.]*)/g
@@ -67,6 +81,26 @@ function dynamicDiscoveredToolsEvidence(snapshot, flowPath, content, registry){
   return out
 }
 
+function injectedRegistryEvidence(snapshot, flowPath, registry){
+  const out=[]
+  if(!/^self\.tools$/i.test(String(registry||''))) return out
+  for(const [path,body] of Object.entries(snapshot?.files||{})){
+    if(SKIP_PATH.test(path)) continue
+    const content=String(body||'')
+    for(const assignment of anyDictAssignments(content)){
+      const variable=reEscape(assignment.variable)
+      const injected=new RegExp(`\\b[A-Za-z_$][\\w$]*\\s*\\([\\s\\S]{0,900}?\\btools\\s*=\\s*${variable}\\b`,'i').test(content)
+      if(!injected) continue
+      for(const e of assignment.entries){
+        if(functionLooksConsequential(content,e.name) || functionLooksConsequential(content,e.implementation)){
+          out.push({flowPath,registry,toolName:e.name,implementation:e.implementation,implementationPath:path,line:e.line,kind:'constructor_injected_registry'})
+        }
+      }
+    }
+  }
+  return out
+}
+
 function selectableConsequences(snapshot, flows){
   const out=[]
   for(const flow of flows||[]){
@@ -80,7 +114,6 @@ function selectableConsequences(snapshot, flows){
       }
     }
 
-    // one-hop dispatcher: model selector -> call_tool(name) -> available_functions.get(name)
     if(/\bcall_tool\s*\(/.test(String(flow.sinkSnippet||''))){
       for(const e of registerToolEntries(content)){
         if(functionLooksConsequential(content,e.name) || functionLooksConsequential(content,e.implementation))
@@ -89,6 +122,7 @@ function selectableConsequences(snapshot, flows){
     }
 
     out.push(...dynamicDiscoveredToolsEvidence(snapshot,flow.path,content,registry))
+    out.push(...injectedRegistryEvidence(snapshot,flow.path,registry))
   }
   const seen=new Set()
   return out.filter(x=>{const k=`${x.flowPath}:${x.registry}:${x.toolName}:${x.implementationPath||x.implementation||''}`;if(seen.has(k))return false;seen.add(k);return true}).slice(0,30)
@@ -103,6 +137,12 @@ export function buildProspectSecuritySignalV22(snapshot,opts={}){
     classification='ARCHITECTURE_UNCERTAIN'
     priority=38
     rationale='Selector-controlled dispatch is visible, but the bounded source snapshot did not prove that the model-selectable registry contains a consequential tool. Unrelated repository writes/processes do not qualify.'
+  }
+
+  if(classification==='ARCHITECTURE_UNCERTAIN' && selectable.length>0 && (s.evidence?.selectorFlows||[]).some(f=>!f.localAuthorityControl)){
+    classification='PROOF_GAP'
+    priority=96
+    rationale='A model-selected tool identifier controls dispatch into a registry that is demonstrably populated with a consequential tool, and no independent authority gate is visible between selection and invocation.'
   }
 
   return {
