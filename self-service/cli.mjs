@@ -1,4 +1,4 @@
-import { readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { collectLocalRepository } from './local-collector.mjs'
 import { buildSelfServiceAssessment, defaultConfig, githubWorkflowTemplate, validateTargetProof } from './self-service.mjs'
@@ -29,9 +29,10 @@ async function main() {
   }
   if (command === 'init') {
     const root = resolve(arg)
+    await mkdir(resolve(root, '.github/workflows'), { recursive: true })
     await writeFile(resolve(root, 'trustready.config.json'), `${JSON.stringify(defaultConfig(), null, 2)}\n`, { flag: 'wx' })
     await writeFile(resolve(root, '.github/workflows/trustready-security-delta.yml'), githubWorkflowTemplate(), { flag: 'wx' })
-    console.log('TrustReady Self-Service initialized. Add a supported target-owned Security Delta harness, then run: node self-service/cli.mjs run .')
+    console.log('TrustReady Self-Service initialized. Add a supported target-owned Security Delta harness, then run the generated CI workflow or: node self-service/cli.mjs run .')
     return
   }
   console.log('TrustReady Self-Service v1\n\n  scan <repo>    Discover reachable agent/tool security surface\n  verify <json>  Validate security-delta-target-proof/v1 evidence\n  run <repo>     Run a supported target-owned Security Delta recipe + verify evidence\n  init <repo>    Write config + minimal CI workflow (fails if files already exist)')
