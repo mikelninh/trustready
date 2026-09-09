@@ -24,5 +24,9 @@
   {"repository":"Ezekiel1214/aetheros-platform","segment":"agent platform application"},
   {"repository":"jiayingliu1212/DevMate-Agent","segment":"coding assistant application"},
   {"repository":"Ayan074/AutoPrepAI-Autonomous-Multi-Agent-Data-Science-Pipeline-using-A2A-MCP","segment":"data workflow application"},
-  {"repository":"Engmhabib/Customer-Support-AI-Agent","segment":"customer support application"}
+  {"repository":"Engmhabib/Customer-Support-AI-Agent","segment":"customer support application"},
+  {"repository":"yoheinakajima/babyagi-2o","segment":"autonomous application","expected":"PROOF_GAP"},
+  {"repository":"JoelKong/PersonalAgents","segment":"personal email/calendar application","expected":"PROOF_GAP"},
+  {"repository":"TGiacinto/tuccia-assistant","segment":"home automation assistant application","expected":"PROOF_GAP"},
+  {"repository":"Shy2593666979/AgentChat","segment":"agent chat application"}
 ]
