@@ -10,6 +10,12 @@ test('proves selector-controlled getattr dispatch',()=>{
   assert.equal(s.evidence.selectorFlows.length,1)
 })
 
+test('recognizes loop-bound selector dispatch',()=>{
+  const s=buildProspectSecuritySignalV2(snap({'engine.py':`async for tool in iter_to_aiter(message.tool_calls):\n    if tool.tool_type == 'function':\n        res = await session.call_tool(tool.name, arguments=tool.arguments or {})`}),{segment:'agent framework'})
+  assert.equal(s.classification,'REVIEW_SIGNAL')
+  assert.equal(s.evidence.selectorFlows[0].selectorKind,'loop_item')
+})
+
 test('local approval between selector and sink downgrades',()=>{
   const s=buildProspectSecuritySignalV2(snap({'agent.py':`tool_name = tool_call.function.name\nif not requiresApproval(tool_name): raise Exception()\nfunc = getattr(handler, tool_name)\nresult = await func()`}),{segment:'application'})
   assert.equal(s.classification,'REVIEW_SIGNAL')
