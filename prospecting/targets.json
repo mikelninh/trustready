@@ -1,7 +1,14 @@
 [
-  {"repository":"browser-use/browser-use","segment":"browser agent","why":"Agent drives authenticated browser effects"},
-  {"repository":"browserbase/stagehand","segment":"browser automation","why":"AI-assisted browser actions and extraction"},
-  {"repository":"All-Hands-AI/OpenHands","segment":"coding agent","why":"Agent can execute consequential software-development actions"},
-  {"repository":"ComposioHQ/composio","segment":"tool/action infrastructure","why":"Agents connect to external tools and APIs"},
-  {"repository":"superagentxai/superagentx","segment":"agent framework","why":"Multi-agent framework with tool execution surface"}
+  {"repository":"superagentxai/superagentx","segment":"calibration / agent framework","why":"Known direct model-tool dispatch path; should remain a high-priority proof-gap candidate","calibrationExpectation":"PROOF_GAP"},
+  {"repository":"browser-use/browser-use","segment":"calibration / browser agent","why":"Known provider-adapter false-positive risk; should not regress to proof-gap from LLM parsing alone","calibrationExpectationNot":"PROOF_GAP"},
+  {"repository":"pydantic/pydantic-ai","segment":"agent framework","why":"Typed agent framework with tool calling and broad production adoption"},
+  {"repository":"crewAIInc/crewAI","segment":"multi-agent framework","why":"Multi-agent orchestration with tools and enterprise-facing workflows"},
+  {"repository":"microsoft/autogen","segment":"multi-agent framework","why":"Agent framework with tool/function execution and code-execution patterns"},
+  {"repository":"langchain-ai/langgraph","segment":"agent orchestration","why":"Graph-based agent orchestration with tools, interrupts and human-in-the-loop patterns"},
+  {"repository":"PrefectHQ/fastmcp","segment":"MCP framework","why":"MCP server/client framework where tool registration and execution boundaries are central"},
+  {"repository":"lastmile-ai/mcp-agent","segment":"MCP agent framework","why":"Agent workflows orchestrating MCP tools and external effects"},
+  {"repository":"huggingface/smolagents","segment":"coding/tool agent framework","why":"Compact agent framework with executable tools and code-agent patterns"},
+  {"repository":"openai/openai-agents-python","segment":"agent framework","why":"Production agent SDK with tools, handoffs and guardrail concepts"},
+  {"repository":"microsoft/semantic-kernel","segment":"agent orchestration","why":"Enterprise agent/plugin orchestration with function invocation surfaces"},
+  {"repository":"swarmclawai/swarmclaw","segment":"agent platform","why":"Smaller autonomous/multi-agent platform to test scanner performance beyond major frameworks"}
 ]
