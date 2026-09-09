@@ -1,0 +1,56 @@
+name: prospect-engine-v2
+
+on:
+  pull_request:
+    paths:
+      - 'prospecting/v2/**'
+      - '.github/workflows/prospect-engine-v2.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'prospecting/v2/**'
+      - '.github/workflows/prospect-engine-v2.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Unit tests
+        run: node --test prospecting/v2/engine.test.mjs
+      - name: Scan 20-30 public agent applications
+        run: node prospecting/v2/run-batch.mjs /tmp/trustready-prospect-v2
+      - name: Verify calibration invariants
+        run: |
+          node - <<'NODE'
+          const fs=require('fs')
+          const p='/tmp/trustready-prospect-v2/prospect-v2-report.json'
+          const r=JSON.parse(fs.readFileSync(p,'utf8'))
+          if(r.targets < 20 || r.targets > 30) throw new Error(`expected 20-30 targets, got ${r.targets}`)
+          if(r.completed < Math.floor(r.targets*0.8)) throw new Error(`too many scan failures: ${r.completed}/${r.targets}`)
+          for(const item of r.results.filter(x=>x.signal)){
+            if(!item.signal.truthBoundary?.includes('does not execute the target')) throw new Error(`truth boundary missing: ${item.repository}`)
+            if(item.signal.classification==='PROOF_GAP' && !item.signal.evidence.selectorFlows?.length) throw new Error(`proof gap lacks selector-flow evidence: ${item.repository}`)
+            if(item.expected && item.signal.classification!==item.expected) throw new Error(`calibration mismatch ${item.repository}: expected ${item.expected}, got ${item.signal.classification}`)
+            if(item.expectedNot && item.signal.classification===item.expectedNot) throw new Error(`negative calibration regressed ${item.repository}: got forbidden ${item.expectedNot}`)
+          }
+          const labeledTrue=r.results.filter(x=>x.humanLabel==='TRUE_SIGNAL')
+          if(labeledTrue.length < 3) throw new Error(`need >=3 human-reviewed TRUE_SIGNAL controls, got ${labeledTrue.length}`)
+          console.log('V2 DISTRIBUTION',r.distribution)
+          console.log('V2 REVIEW QUEUE',r.reviewQueue.length)
+          console.log('V2 LABELED PRECISION',r.precision)
+          NODE
+      - name: Upload v2 calibration evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: trustready-prospect-engine-v2
+          path: /tmp/trustready-prospect-v2/
+          if-no-files-found: error
