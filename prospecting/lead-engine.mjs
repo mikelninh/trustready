@@ -34,6 +34,7 @@ const DIRECT_DISPATCH_PATTERNS = [
 ]
 
 const FALSE_POSITIVE_PATH = /(^|\/)(__?tests?__?|testdata|fixtures?|examples?|samples?|docs?|playgrounds?|benchmarks?|evals?|migrations?|node_modules|vendor)(\/|$)/i
+const PROVIDER_ADAPTER_PATH = /(^|\/)(llm|llms|models?|providers?)(\/|$)/i
 
 function lines(content, regex) {
   const out=[]
@@ -67,7 +68,7 @@ function agentEvidence(files) {
 function directDispatchEvidence(files) {
   const hits=[]
   for (const [path,content] of Object.entries(files||{})) {
-    if(FALSE_POSITIVE_PATH.test(path)) continue
+    if(FALSE_POSITIVE_PATH.test(path) || PROVIDER_ADAPTER_PATH.test(path)) continue
     const direct=DIRECT_DISPATCH_PATTERNS.some(r=>r.test(content))
     if(!direct) continue
     const localControls=BOUNDARY_PATTERNS.filter(([,r])=>r.test(content)).map(([id])=>id)
