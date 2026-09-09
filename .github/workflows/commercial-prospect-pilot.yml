@@ -1,0 +1,54 @@
+name: commercial-prospect-pilot
+
+on:
+  pull_request:
+    paths:
+      - 'prospecting/commercial/**'
+      - 'prospecting/v2/**'
+      - '.github/workflows/commercial-prospect-pilot.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'prospecting/commercial/**'
+      - 'prospecting/v2/**'
+      - '.github/workflows/commercial-prospect-pilot.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Ranker unit tests
+        run: node --test prospecting/commercial/ranker.test.mjs
+      - name: Run passive commercial prospect pilot
+        run: node prospecting/commercial/run-pilot.mjs /tmp/trustready-commercial-pilot
+      - name: Verify outreach safety invariants
+        run: |
+          node - <<'NODE'
+          const fs=require('fs')
+          const r=JSON.parse(fs.readFileSync('/tmp/trustready-commercial-pilot/commercial-prospect-report.json','utf8'))
+          if(r.completed < Math.floor(r.targets*.8)) throw new Error(`too many scan failures ${r.completed}/${r.targets}`)
+          if(!r.truthBoundary?.includes('human source review')) throw new Error('human review truth boundary missing')
+          for(const item of r.outreachQueue){
+            if(item.classification!=='PROOF_GAP') throw new Error(`non-proof-gap entered outreach queue: ${item.repository}`)
+            if(item.score<75) throw new Error(`low-score candidate entered outreach queue: ${item.repository}`)
+            if(!item.truthBoundary?.includes('does not execute the target')) throw new Error(`source truth boundary missing: ${item.repository}`)
+          }
+          const unique=new Set(r.ranked.map(x=>x.repository))
+          if(unique.size!==r.ranked.length) throw new Error('duplicate prospects survived dedupe')
+          console.log('COMMERCIAL PILOT PASS', {targets:r.targets,completed:r.completed,outreachQueue:r.outreachQueue.length})
+          NODE
+      - name: Upload commercial pilot evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: trustready-commercial-prospect-pilot
+          path: /tmp/trustready-commercial-pilot/
+          if-no-files-found: error
