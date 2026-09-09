@@ -83,7 +83,7 @@ function dynamicDiscoveredToolsEvidence(snapshot, flowPath, content, registry){
 
 function injectedRegistryEvidence(snapshot, flowPath, registry){
   const out=[]
-  if(!/^self\.tools$/i.test(String(registry||''))) return out
+  if(!/^(?:self\.)?tools$/i.test(String(registry||''))) return out
   for(const [path,body] of Object.entries(snapshot?.files||{})){
     if(SKIP_PATH.test(path)) continue
     const content=String(body||'')
