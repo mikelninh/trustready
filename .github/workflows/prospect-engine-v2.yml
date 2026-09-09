@@ -25,7 +25,7 @@ jobs:
         with:
           node-version: 24
       - name: Unit tests
-        run: node --test prospecting/v2/engine.test.mjs
+        run: node --test prospecting/v2/*.test.mjs
       - name: Scan 50-60 public agent repositories
         run: node prospecting/v2/run-batch.mjs /tmp/trustready-prospect-v2
       - name: Verify calibration invariants
@@ -42,11 +42,13 @@ jobs:
             if(item.expected && item.signal.classification!==item.expected) throw new Error(`calibration mismatch ${item.repository}: expected ${item.expected}, got ${item.signal.classification}`)
             if(item.expectedNot && item.signal.classification===item.expectedNot) throw new Error(`negative calibration regressed ${item.repository}: got forbidden ${item.expectedNot}`)
           }
-          const labeledTrue=r.results.filter(x=>x.humanLabel==='TRUE_SIGNAL')
-          if(labeledTrue.length < 3) throw new Error(`need >=3 human-reviewed TRUE_SIGNAL controls, got ${labeledTrue.length}`)
+          if(!r.metrics) throw new Error('calibration metrics missing')
+          if(r.metrics.reviewed < 30) throw new Error(`need >=30 human-reviewed repos, got ${r.metrics.reviewed}`)
+          if(r.metrics.binaryReviewed < 10) throw new Error(`need >=10 binary labels for precision/recall, got ${r.metrics.binaryReviewed}`)
+          if(!Array.isArray(r.metrics.falseNegatives)) throw new Error('false-negative list missing')
           console.log('V2 DISTRIBUTION',r.distribution)
           console.log('V2 REVIEW QUEUE',r.reviewQueue.length)
-          console.log('V2 CALIBRATION METRICS',r.precision)
+          console.log('V2 CALIBRATION METRICS',JSON.stringify(r.metrics,null,2))
           NODE
       - name: Upload v2 calibration evidence
         uses: actions/upload-artifact@v4
