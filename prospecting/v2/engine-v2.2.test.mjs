@@ -30,3 +30,11 @@ test('dynamic discovered write-file tool remains proof gap',()=>{
   }),{segment:'application'})
   assert.equal(s.classification,'PROOF_GAP')
 })
+
+test('constructor-injected self.tools registry recovers Au-style false negative',()=>{
+  const s=buildProspectSecuritySignalV22(snap({
+    'main.py':`def edit_file(path, old, new):\n    with open(path,'w') as f: f.write(new)\nclass Agent:\n    def execute_single_tool_call(self, tool_call):\n        tool_name = tool_call.function.name\n        tool_func = self.tools[tool_name].function\n        return tool_func(**args)\ntool_dic = {'read_file': read_file, 'edit_file': edit_file}\nagent = Agent(client=cli, tools=tool_dic)`
+  }),{segment:'application'})
+  assert.equal(s.classification,'PROOF_GAP')
+  assert.equal(s.evidence.selectableConsequences.some(x=>x.kind==='constructor_injected_registry'),true)
+})
