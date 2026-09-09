@@ -1,0 +1,1 @@
+{"version":"trustready-pmf-scorecard/v1","targets":5,"successCriteria":{"technicalConversations":3,"ownedCiOrCiRetention":2,"paidCustomers":1},"notes":"Internal source scans do not count as PMF. Only external team behavior/revenue counts."}

@@ -1,0 +1,6 @@
+repository,signal_sent,reply,technical_call,owned_ci_validation,finding_confirmed,remediation_accepted,ci_retained,paid_eur,lost_reason
+browser-use/browser-use,false,false,false,false,false,false,false,0,
+browserbase/stagehand,false,false,false,false,false,false,false,0,
+All-Hands-AI/OpenHands,false,false,false,false,false,false,false,0,
+ComposioHQ/composio,false,false,false,false,false,false,false,0,
+superagentxai/superagentx,false,false,false,false,false,false,false,0,
