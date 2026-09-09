@@ -1,14 +1,10 @@
 [
-  {"repository":"superagentxai/superagentx","segment":"calibration / agent framework","why":"Known direct model-tool dispatch path; should remain a high-priority proof-gap candidate","calibrationExpectation":"PROOF_GAP"},
-  {"repository":"browser-use/browser-use","segment":"calibration / browser agent","why":"Known provider-adapter false-positive risk; should not regress to proof-gap from LLM parsing alone","calibrationExpectationNot":"PROOF_GAP"},
-  {"repository":"pydantic/pydantic-ai","segment":"agent framework","why":"Typed agent framework with tool calling and broad production adoption"},
-  {"repository":"crewAIInc/crewAI","segment":"multi-agent framework","why":"Multi-agent orchestration with tools and enterprise-facing workflows"},
-  {"repository":"microsoft/autogen","segment":"multi-agent framework","why":"Agent framework with tool/function execution and code-execution patterns"},
-  {"repository":"langchain-ai/langgraph","segment":"agent orchestration","why":"Graph-based agent orchestration with tools, interrupts and human-in-the-loop patterns"},
-  {"repository":"PrefectHQ/fastmcp","segment":"MCP framework","why":"MCP server/client framework where tool registration and execution boundaries are central"},
-  {"repository":"lastmile-ai/mcp-agent","segment":"MCP agent framework","why":"Agent workflows orchestrating MCP tools and external effects"},
-  {"repository":"huggingface/smolagents","segment":"coding/tool agent framework","why":"Compact agent framework with executable tools and code-agent patterns"},
-  {"repository":"openai/openai-agents-python","segment":"agent framework","why":"Production agent SDK with tools, handoffs and guardrail concepts"},
-  {"repository":"microsoft/semantic-kernel","segment":"agent orchestration","why":"Enterprise agent/plugin orchestration with function invocation surfaces"},
-  {"repository":"swarmclawai/swarmclaw","segment":"agent platform","why":"Smaller autonomous/multi-agent platform to test scanner performance beyond major frameworks"}
+  {"repository":"manishh18/ai-email-support-triage-agent","segment":"customer support / email","why":"Support automation with email handling and likely outbound customer effects"},
+  {"repository":"MHassan-AiExpert/ProspectPilot-AI-Autonomous-Multi-Agent-Sales-Pipeline","segment":"sales automation","why":"Autonomous multi-agent sales pipeline with prospecting and outreach-style actions"},
+  {"repository":"AhmedHassanAnsari/Email-Employee","segment":"email automation","why":"Agent-style email worker with real communication effects"},
+  {"repository":"emrahdemirkoc/Autonomous-AI-Sales-SDR","segment":"sales SDR agent","why":"Autonomous sales development workflow with consequential outreach actions"},
+  {"repository":"mnogueiradev/ai-sales-crm-agent","segment":"sales / CRM","why":"Agentic CRM workflow where record mutation and outreach boundaries matter"},
+  {"repository":"sohaggain/ai-omnichannel-support-agent","segment":"customer support","why":"Omnichannel support automation with messaging-style effects"},
+  {"repository":"s4hil-dev/sendora-email-agent","segment":"email agent","why":"Email agent with outbound communication surface"},
+  {"repository":"capture0x/AdAgent","segment":"autonomous agent application","why":"Smaller agent application used to test scanner precision beyond mainstream SDKs"}
 ]
