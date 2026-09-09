@@ -2,7 +2,7 @@ import { readFile, mkdir, rm, writeFile } from 'node:fs/promises'
 import { execFileSync } from 'node:child_process'
 import { join, resolve } from 'node:path'
 import { collectLocalRepository } from '../../self-service/local-collector.mjs'
-import { buildProspectSecuritySignalV2, precisionMetrics } from './engine.mjs'
+import { buildProspectSecuritySignalV2, precisionMetrics } from './engine-v2.mjs'
 
 const targets=JSON.parse(await readFile(new URL('./targets.json',import.meta.url),'utf8'))
 const labelsPath=new URL('./human-labels.json',import.meta.url)
