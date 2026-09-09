@@ -1,4 +1,7 @@
 {
   "capture0x/AdAgent": {"label":"FALSE_POSITIVE","note":"Human-reviewed provider/backend adapter false positive from Batch 3; normalizes model tool calls but does not dispatch the model-selected business effect."},
-  "superagentxai/superagentx": {"label":"UNCERTAIN","note":"Human-reviewed selector-controlled tool dispatch exists in engine.py, but framework semantics may intentionally delegate authorization to handlers/applications. Requires owned-runtime validation before TRUE_SIGNAL."}
+  "superagentxai/superagentx": {"label":"UNCERTAIN","note":"Human-reviewed selector-controlled tool dispatch exists in engine.py, but framework semantics may intentionally delegate authorization to handlers/applications. Requires owned-runtime validation before TRUE_SIGNAL."},
+  "yoheinakajima/babyagi-2o": {"label":"TRUE_SIGNAL","note":"Human-reviewed source architecture: model-selected tool_call.function.name resolves through available_functions and executes the selected function. No independent authority gate is visible between selector and dispatch. This label confirms the source signal only, not exploitability."},
+  "JoelKong/PersonalAgents": {"label":"TRUE_SIGNAL","note":"Human-reviewed email_agent.py: model-selected tool_call.function.name indexes available_functions; send_email can perform Gmail messages.send. No independent dispatch-time authority gate is visible. Source signal only, not a vulnerability claim."},
+  "TGiacinto/tuccia-assistant": {"label":"TRUE_SIGNAL","note":"Human-reviewed functions/functions.py: model-selected tool_call.function.name indexes available_functions; home_assistant can actuate devices. No independent dispatch-time authority gate is visible. Source signal only, not a vulnerability claim."}
 }
