@@ -9,6 +9,7 @@ export const CONNECTED_RUNNER_VERSION = 'trustready-connected-runner/v1'
 const RECIPES = [
   { id: 'npm-security-delta', detect: async root => exists(join(root, 'package.json')) && packageHas(root, 'security:delta'), command: ['npm', 'run', 'security:delta'] },
   { id: 'node-security-delta', detect: async root => exists(join(root, 'security/security-delta.mjs')), command: ['node', 'security/security-delta.mjs'] },
+  { id: 'node-enterprise-security-delta', detect: async root => exists(join(root, 'enterprise/security-delta.mjs')), command: ['node', 'enterprise/security-delta.mjs'] },
   { id: 'python-security-delta', detect: async root => exists(join(root, 'security/security_delta.py')), command: ['python', 'security/security_delta.py'] },
 ]
 
