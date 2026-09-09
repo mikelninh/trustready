@@ -4,14 +4,14 @@ export const PROSPECT_V22_VERSION = 'trustready-prospect-security-signal/v2.2'
 
 const SKIP_PATH = /(^|\/)(?:__?tests?__?|integration[_-]?tests?|testdata|fixtures?|examples?|samples?|docs?|playgrounds?|benchmarks?|evals?|migrations?|node_modules|vendor)(\/|$)/i
 const CONSEQ_NAME = /(?:^|[_-])(?:send(?:_email|_message|_sms)?|reply_email|write|edit|delete|remove|create_file|write_file|edit_file|delete_file|install_package|execute_command|run_command|shell|bash|publish|deploy|release|payment|pay|charge|refund|transfer|home_assistant|turn_on|turn_off)(?:$|[_-])/i
-const CONSEQ_IMPL = /(?:messages\(\)\.send\s*\(|messages\.send\s*\(|subprocess\.(?:run|call|check_call|Popen)\s*\(|os\.system\s*\(|open\s*\([^\n]{0,160},\s*['\"](?:w|a|x|wb|ab)['\"]|\.write_text\s*\(|os\.(?:remove|unlink)\s*\(|requests\.(?:post|put|patch|delete)\s*\(|stripe\.|\.activate\s*\(|\.deactivate\s*\()/i
+const CONSEQ_IMPL = /(?:messages\(\)\.send\s*\(|messages\.send\s*\(|resend\.Emails\.send\s*\(|subprocess\.(?:run|call|check_call|Popen)\s*\(|os\.system\s*\(|open\s*\([^\n]{0,160},\s*['\"](?:w|a|x|wb|ab)['\"]|\.write_text\s*\(|os\.(?:remove|unlink)\s*\(|requests\.(?:post|put|patch|delete)\s*\(|stripe\.|\.activate\s*\(|\.deactivate\s*\()/i
 
 function reEscape(v){ return String(v||'').replace(/[.*+?^${}()|[\]\\]/g,'\\$&') }
 function lineNo(content,offset){ return String(content||'').slice(0,offset).split('\n').length }
 
 function registryNameFromFlow(flow){
   const s=String(flow?.sinkSnippet||'')
-  const m=/(available_functions|AVAILABLE_FUNCTIONS|tool_mapping|tool_map|tool_fn_map|self\.tools|tools|handlers|actions|functions)/i.exec(s)
+  const m=/(available_functions|AVAILABLE_FUNCTIONS|tool_mapping|tool_map|tool_fn_map|self\.tools|tools|handlers|actions|functions|available)/i.exec(s)
   return m?.[1]||null
 }
 
