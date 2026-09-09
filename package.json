@@ -1,10 +1,12 @@
 {
   "name": "trustready",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test core/*.test.mjs",
+    "test": "node --test core/*.test.mjs self-service/*.test.mjs",
+    "self-service": "node self-service/cli.mjs",
+    "self-service:scan": "node self-service/cli.mjs scan .",
     "benchmark:scanner": "node benchmarks/run-scanner-benchmark.mjs",
     "audit:legal": "node scripts/legal-preaudit-v12.mjs",
     "audit:request-pack": "node scripts/legal-audit-request-pack.mjs",

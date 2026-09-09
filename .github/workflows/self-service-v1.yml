@@ -1,0 +1,48 @@
+name: self-service-v1
+
+on:
+  pull_request:
+    paths:
+      - 'core/agent-repo-scanner*'
+      - 'self-service/**'
+      - 'product-architecture/self-service/**'
+      - 'package.json'
+      - '.github/workflows/self-service-v1.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'core/agent-repo-scanner*'
+      - 'self-service/**'
+      - 'product-architecture/self-service/**'
+      - 'package.json'
+      - '.github/workflows/self-service-v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Syntax
+        run: |
+          node --check core/agent-repo-scanner.mjs
+          node --check self-service/self-service.mjs
+          node --check self-service/local-collector.mjs
+          node --check self-service/connected-runner.mjs
+          node --check self-service/cli.mjs
+      - name: Unit and golden cases
+        run: node --test core/agent-repo-scanner.test.mjs self-service/self-service.test.mjs
+      - name: CLI source preflight never overclaims runtime GO
+        run: |
+          node self-service/cli.mjs scan . > /tmp/self-service-scan.json || true
+          node - <<'NODE'
+          const r=require('/tmp/self-service-scan.json')
+          if(r.release?.decision==='TECHNICAL_GO') throw new Error('source-only scan overclaimed runtime GO')
+          if(!/not a penetration test/i.test(r.truthBoundary)) throw new Error('truth boundary missing')
+          NODE
