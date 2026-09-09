@@ -1,0 +1,17 @@
+[
+  {"repository":"oomol-lab/open-connector","ownerType":"Organization","segment":"connector automation product","commercialFit":5},
+  {"repository":"f4rmhouse/f4rmhouse","ownerType":"Organization","segment":"agent automation product","commercialFit":5},
+  {"repository":"getomnico/omni","ownerType":"Organization","segment":"AI agent product","commercialFit":5},
+  {"repository":"MiniMax-AI/Mini-Agent","ownerType":"Organization","segment":"coding/agent product","commercialFit":4},
+  {"repository":"browser-use/browser-use","ownerType":"Organization","segment":"browser agent product","commercialFit":5},
+  {"repository":"wecode-ai/Wegent","ownerType":"Organization","segment":"agent platform product","commercialFit":5},
+  {"repository":"OpenBMB/AgentCPM","ownerType":"Organization","segment":"agent platform","commercialFit":3},
+  {"repository":"x402-foundation/x402","ownerType":"Organization","segment":"agent payments infrastructure","commercialFit":5},
+  {"repository":"pipecat-ai/pipecat","ownerType":"Organization","segment":"voice agent framework","commercialFit":4},
+  {"repository":"bytedance/deer-flow","ownerType":"Organization","segment":"agent product guarded negative control","commercialFit":5},
+  {"repository":"openakita/openakita","ownerType":"Organization","segment":"assistant product","commercialFit":4},
+  {"repository":"mastra-ai/template-browsing-agent","ownerType":"Organization","segment":"browser agent template","commercialFit":3},
+  {"repository":"ayushstwt/ai-sales-crm-agent","ownerType":"User","segment":"sales CRM agent application","commercialFit":3},
+  {"repository":"ShadowWalker2014/openmail","ownerType":"User","segment":"AI email product","commercialFit":3},
+  {"repository":"oomol-lab/open-connector","ownerType":"Organization","segment":"connector automation product duplicate-control","commercialFit":5,"dedupeControl":true}
+]
